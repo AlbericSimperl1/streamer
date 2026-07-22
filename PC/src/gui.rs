@@ -1,34 +1,35 @@
 use crate::app::App;
-use crate::capture::CaptureStatus;
 use crate::types::LogLevel;
 use eframe::egui;
 use std::time::Duration;
 
-// ─── Omatunes-achtige Kleurenpalet ────────────────────────────
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(129, 140, 248); // Zacht Indigo/Paars
-const ACCENT_HOVER: egui::Color32 = egui::Color32::from_rgb(165, 180, 252);
-const DANGER: egui::Color32 = egui::Color32::from_rgb(248, 113, 113); // Zacht Rood
-const DANGER_HOVER: egui::Color32 = egui::Color32::from_rgb(252, 165, 165);
+// ─── Music App (Omatunes) Kleurenpalet ──────────────────────────
+const BG_MAIN: egui::Color32 = egui::Color32::from_rgb(20, 20, 28);       // Donkere slate achtergrond
+const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(28, 28, 38);      // Paneel achtergrond
+const BG_INNER: egui::Color32 = egui::Color32::from_rgb(15, 15, 22);      // Terminal & Canvas achtergrond
+const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgb(42, 42, 58);  // Subtiele randen
 
-const BG_MAIN: egui::Color32 = egui::Color32::from_rgb(15, 15, 20);
-const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(23, 23, 31);
-const BG_TERMINAL: egui::Color32 = egui::Color32::from_rgb(10, 10, 14);
+// Accenten uit de muziek-app screenshot (Neon Lime + Soft Indigo/Blue)
+const ACCENT_LIME: egui::Color32 = egui::Color32::from_rgb(132, 204, 22);  // Neon Lime Groen (#84cc16)
+const ACCENT_HOVER: egui::Color32 = egui::Color32::from_rgb(163, 230, 53); // Lichter Neon Groen
+const ACCENT_BLUE: egui::Color32 = egui::Color32::from_rgb(99, 102, 241);  // Indigo Blauw (#6366f1)
+const DANGER_RED: egui::Color32 = egui::Color32::from_rgb(239, 68, 68);   // Soft Rood (#ef4444)
+const DANGER_HOVER: egui::Color32 = egui::Color32::from_rgb(248, 113, 113);
 
-const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(240, 240, 245);
-const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(148, 163, 184);
+const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(241, 245, 249); // Heldere tekst
+const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(148, 163, 184);   // Grijze subtekst
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // ─── 1. Custom Styling & Theme Setup ──────────────────────────
         configure_style(ctx);
 
-        // — business logic tick (auto-refresh) —
+        // — Business logic tick —
         self.tick();
         if self.auto_refresh {
             ctx.request_repaint_after(Duration::from_secs(1));
         }
 
-        // — check voor SIGINT/SIGTERM —
+        // — Check voor signal shutdown —
         if self.should_quit() {
             self.shutdown();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -38,31 +39,46 @@ impl eframe::App for App {
         let capturing = self.is_capturing();
         let stopping = self.is_stopping();
         if capturing || stopping {
-            ctx.request_repaint_after(Duration::from_millis(250));
+            ctx.request_repaint_after(Duration::from_millis(100));
         }
 
         self.poll_stop_result();
 
-        // ─── 2. Layout Container ──────────────────────────────────────
+        // ─── Layout Container ──────────────────────────────────────────
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
                     .fill(BG_MAIN)
-                    .inner_margin(egui::Margin::same(24.0)),
+                    .inner_margin(egui::Margin::same(16.0)),
             )
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.set_min_width(ui.available_width() - 8.0);
-                        ui.spacing_mut().item_spacing.y = 16.0;
+                ui.spacing_mut().item_spacing.y = 12.0;
 
-                        self.render_header(ui);
+                // 1. Header (naam app)
+                self.render_header(ui);
+
+                // 2. Midden: Config (links) + Pos (rechts)
+                ui.columns(2, |cols| {
+                    cols[0].vertical(|ui| {
                         self.render_config_card(ui);
-                        self.render_action_buttons(ui);
-                        self.render_capture_card(ui, stopping);
+                    });
+                    cols[1].vertical(|ui| {
+                        self.render_pos_card(ui);
+                    });
+                });
+
+                // 3. Actieknoppen: [ Create ] [ Remove ] [ Start ] [ Stop ]
+                self.render_action_bar(ui, stopping);
+
+                // 4. Onder: Log (links) + FPS Graph (rechts)
+                ui.columns(2, |cols| {
+                    cols[0].vertical(|ui| {
                         self.render_log_card(ui);
                     });
+                    cols[1].vertical(|ui| {
+                        self.render_graph_card(ui);
+                    });
+                });
             });
     }
 
@@ -74,73 +90,103 @@ impl eframe::App for App {
 // ─── UI Rendering Helpers ─────────────────────────────────────
 
 impl App {
+    /// Top Section: `naam app` (Header)
     fn render_header(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.heading(
-                egui::RichText::new("Hyprland Virtual Display")
-                    .color(TEXT_PRIMARY)
-                    .size(22.0)
-                    .strong(),
-            );
+        panel_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                // Neon groen muziek-icon geïnspireerd badge
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 6.0, ACCENT_LIME);
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "♬",
+                    egui::FontId::proportional(16.0),
+                    BG_MAIN,
+                );
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 12.0;
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new("naam app")
+                        .color(TEXT_PRIMARY)
+                        .size(18.0)
+                        .monospace()
+                        .strong(),
+                );
 
-                let refresh_color = if self.auto_refresh {
-                    ACCENT
-                } else {
-                    TEXT_MUTED
-                };
-                if ui.add(ghost_button("🔄 Refresh", refresh_color)).clicked() {
-                    self.refresh();
-                }
+                ui.label(
+                    egui::RichText::new("// hyprland display streamer")
+                        .color(TEXT_MUTED)
+                        .size(12.0)
+                        .monospace(),
+                );
 
-                let toggle_text = if self.auto_refresh {
-                    "Auto: ON"
-                } else {
-                    "Auto: OFF"
-                };
-                let toggle_color = if self.auto_refresh {
-                    ACCENT
-                } else {
-                    TEXT_MUTED
-                };
-                if ui.add(ghost_button(toggle_text, toggle_color)).clicked() {
-                    self.auto_refresh = !self.auto_refresh;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let capturing = self.is_capturing();
+                    let (status_text, color) = if capturing {
+                        ("● STREAMING", ACCENT_LIME)
+                    } else if self.is_stopping() {
+                        ("⏳ STOPPING", ACCENT_BLUE)
+                    } else if self.monitor_exists {
+                        ("● ONLINE", ACCENT_BLUE)
+                    } else {
+                        ("○ OFFLINE", TEXT_MUTED)
+                    };
+
+                    ui.label(
+                        egui::RichText::new(status_text)
+                            .color(color)
+                            .size(12.0)
+                            .monospace()
+                            .strong(),
+                    );
+
+                    ui.add_space(12.0);
+                    if ui.add(ghost_button("🔄 refresh", ACCENT_LIME)).clicked() {
+                        self.refresh();
+                    }
+                });
             });
         });
     }
 
+    /// Top-Left Panel: `config`
     fn render_config_card(&mut self, ui: &mut egui::Ui) {
-        card_frame().show(ui, |ui| {
+        panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.set_min_height(200.0);
+
             ui.label(
-                egui::RichText::new("Monitor Configuration")
-                    .color(TEXT_PRIMARY)
+                egui::RichText::new("config")
+                    .color(ACCENT_LIME)
+                    .size(16.0)
+                    .monospace()
                     .strong(),
             );
-            ui.add_space(12.0);
+            ui.add_space(8.0);
 
-            egui::Grid::new("cfg_grid")
-                .num_columns(3)
-                .spacing([16.0, 12.0])
+            egui::Grid::new("config_grid")
+                .num_columns(2)
+                .spacing([12.0, 10.0])
                 .show(ui, |ui| {
-                    // — Name —
-                    ui.label(egui::RichText::new("Name").color(TEXT_MUTED));
-                    ui.add_enabled_ui(!self.monitor_exists, |ui| {
-                        ui.style_mut().visuals.widgets.inactive.bg_fill = BG_MAIN;
-                        ui.text_edit_singleline(&mut self.config.name);
+                    // identifier :
+                    ui.label(egui::RichText::new("identifier :").color(TEXT_MUTED).monospace());
+                    ui.horizontal(|ui| {
+                        ui.add_enabled_ui(!self.monitor_exists, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.config.name)
+                                    .desired_width(120.0),
+                            );
+                        });
+                        if self.monitor_exists {
+                            ui.label(egui::RichText::new("✓ active").color(ACCENT_LIME).monospace().small());
+                        }
                     });
-                    if self.monitor_exists {
-                        ui.label(egui::RichText::new("● Active").color(ACCENT).small());
-                    } else {
-                        ui.label("");
-                    }
                     ui.end_row();
 
-                    // — Resolution —
-                    ui.label(egui::RichText::new("Resolution").color(TEXT_MUTED));
+                    // res :
+                    ui.label(egui::RichText::new("res :").color(TEXT_MUTED).monospace());
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.config.width)
@@ -154,239 +200,251 @@ impl App {
                                 .suffix(" px"),
                         );
                     });
-                    ui.label("");
                     ui.end_row();
 
-                    // — Refresh Rate —
-                    ui.label(egui::RichText::new("Refresh Rate").color(TEXT_MUTED));
+                    // frame rate :
+                    ui.label(egui::RichText::new("frame rate :").color(TEXT_MUTED).monospace());
                     ui.add(
                         egui::DragValue::new(&mut self.config.fps)
                             .range(1..=240)
                             .suffix(" Hz"),
                     );
-                    ui.label("");
                     ui.end_row();
 
-                    // — Position —
-                    ui.label(egui::RichText::new("Position").color(TEXT_MUTED));
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            egui::DragValue::new(&mut self.config.x)
-                                .range(-10000..=10000)
-                                .prefix("x:"),
-                        );
-                        ui.add(
-                            egui::DragValue::new(&mut self.config.y)
-                                .range(-10000..=10000)
-                                .prefix("y:"),
-                        );
-                    });
-                    ui.label(
-                        egui::RichText::new("(off-screen)")
-                            .color(TEXT_MUTED)
-                            .small(),
-                    );
-                    ui.end_row();
-
-                    // — Scale —
-                    ui.label(egui::RichText::new("Scale").color(TEXT_MUTED));
+                    // scale :
+                    ui.label(egui::RichText::new("scale :").color(TEXT_MUTED).monospace());
                     ui.add(
                         egui::DragValue::new(&mut self.config.scale)
                             .range(0.5f32..=3.0f32)
                             .speed(0.1),
                     );
-                    ui.label("");
                     ui.end_row();
                 });
 
-            ui.add_space(12.0);
-
-            // Terminal-achtige weergave van het commando
-            terminal_frame().show(ui, |ui| {
+            ui.add_space(10.0);
+            inner_frame().show(ui, |ui| {
+                ui.set_width(ui.available_width());
                 ui.monospace(
-                    egui::RichText::new(format!(
-                        "$ hyprctl keyword monitor {}",
-                        self.config.to_keyword()
-                    ))
-                    .color(egui::Color32::from_rgb(130, 200, 255)),
+                    egui::RichText::new(format!("$ {}", self.config.to_keyword()))
+                        .color(ACCENT_LIME)
+                        .size(11.0),
                 );
             });
         });
     }
 
-    fn render_action_buttons(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 12.0;
-
-            let can_create = !self.monitor_exists && !self.config.name.is_empty();
-            let can_remove = self.monitor_exists;
-
-            // Create Button (Indigo)
-            ui.scope(|ui| {
-                let style = ui.style_mut();
-                style.visuals.widgets.inactive.bg_fill = ACCENT;
-                style.visuals.widgets.hovered.bg_fill = ACCENT_HOVER;
-                style.visuals.widgets.active.bg_fill = ACCENT_HOVER;
-                style.visuals.widgets.inactive.fg_stroke =
-                    egui::Stroke::new(1.0f32, egui::Color32::WHITE);
-                style.visuals.widgets.hovered.fg_stroke =
-                    egui::Stroke::new(1.0f32, egui::Color32::WHITE);
-
-                if ui
-                    .add_enabled(
-                        can_create,
-                        egui::Button::new("✅  Create").min_size(egui::vec2(110.0, 34.0)),
-                    )
-                    .clicked()
-                {
-                    self.do_create();
-                }
-            });
-
-            // Remove Button (Red)
-            ui.scope(|ui| {
-                let style = ui.style_mut();
-                style.visuals.widgets.inactive.bg_fill = DANGER;
-                style.visuals.widgets.hovered.bg_fill = DANGER_HOVER;
-                style.visuals.widgets.active.bg_fill = DANGER_HOVER;
-                style.visuals.widgets.inactive.fg_stroke =
-                    egui::Stroke::new(1.0f32, egui::Color32::WHITE);
-                style.visuals.widgets.hovered.fg_stroke =
-                    egui::Stroke::new(1.0f32, egui::Color32::WHITE);
-
-                if ui
-                    .add_enabled(
-                        can_remove,
-                        egui::Button::new("❌  Remove").min_size(egui::vec2(110.0, 34.0)),
-                    )
-                    .clicked()
-                {
-                    self.do_remove();
-                }
-            });
-        });
-    }
-
-    fn render_capture_card(&mut self, ui: &mut egui::Ui, stopping: bool) {
-        card_frame().show(ui, |ui| {
+    /// Top-Right Panel: `pos` (Monitor 2D visualizer with interactive dragging)
+    fn render_pos_card(&mut self, ui: &mut egui::Ui) {
+        panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-
-            // Definieer status hier, zodat we het in de hele closure kunnen gebruiken
-            let status = self
-                .capture
-                .as_ref()
-                .map(|c| c.status())
-                .unwrap_or(CaptureStatus::Idle);
-            let running = matches!(status, CaptureStatus::Capturing { .. })
-                || matches!(status, CaptureStatus::Starting(_));
-            let busy = running || stopping;
+            ui.set_min_height(200.0);
 
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("🎥  Capture")
-                        .color(TEXT_PRIMARY)
+                    egui::RichText::new("pos")
+                        .color(ACCENT_LIME)
+                        .size(16.0)
+                        .monospace()
                         .strong(),
                 );
-
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if stopping {
-                        ui.label(
-                            egui::RichText::new("⏳ Finalizing...")
-                                .color(ACCENT)
-                                .small(),
-                        );
-                    }
-
-                    let stop_color = if running { DANGER } else { TEXT_MUTED };
-                    if ui
-                        .add_enabled(running, ghost_button("⏹  Stop", stop_color))
-                        .clicked()
-                    {
-                        self.do_stop_capture();
-                    }
-
-                    // Start Button (Indigo)
-                    ui.scope(|ui| {
-                        let style = ui.style_mut();
-                        style.visuals.widgets.inactive.bg_fill = ACCENT;
-                        style.visuals.widgets.hovered.bg_fill = ACCENT_HOVER;
-                        style.visuals.widgets.active.bg_fill = ACCENT_HOVER;
-                        style.visuals.widgets.inactive.fg_stroke =
-                            egui::Stroke::new(1.0f32, egui::Color32::WHITE);
-                        style.visuals.widgets.hovered.fg_stroke =
-                            egui::Stroke::new(1.0f32, egui::Color32::WHITE);
-
-                        if ui
-                            .add_enabled(
-                                !busy
-                                    && self.monitor_exists
-                                    && !self.capture_output_path.is_empty(),
-                                egui::Button::new("▶  Start").min_size(egui::vec2(110.0, 34.0)),
-                            )
-                            .clicked()
-                        {
-                            self.do_start_capture();
-                        }
-                    });
+                    ui.label(
+                        egui::RichText::new(format!("x: {}  y: {}", self.config.x, self.config.y))
+                            .color(ACCENT_LIME)
+                            .monospace()
+                            .small(),
+                    );
                 });
             });
+            ui.add_space(4.0);
 
-            ui.add_space(8.0);
+            // Interactive canvas for dragging monitor layout
+            inner_frame().show(ui, |ui| {
+                let (response, painter) = ui.allocate_painter(
+                    egui::vec2(ui.available_width(), 118.0),
+                    egui::Sense::click_and_drag(),
+                );
+                let canvas_rect = response.rect;
 
-            let (status_text, color) = match &status {
-                CaptureStatus::Idle => ("○ Idle".to_string(), TEXT_MUTED),
-                CaptureStatus::Starting(msg) => (format!("… {msg}"), ACCENT),
-                CaptureStatus::Capturing {
-                    width,
-                    height,
-                    frames,
-                    ..
-                } => (
-                    format!("● Capturing {width}×{height} — {frames} frames"),
-                    egui::Color32::from_rgb(100, 220, 100),
-                ),
-                CaptureStatus::Finished { path, frames } => (
-                    format!("✓ Saved {path} ({frames} frames)"),
-                    egui::Color32::from_rgb(120, 200, 255),
-                ),
-                CaptureStatus::Error(e) => (format!("✗ {e}"), DANGER),
-            };
+                // Handle mouse drag to update position
+                if response.dragged() {
+                    let delta = response.drag_delta();
+                    // 1 canvas pixel = 15 screen coordinate units
+                    let delta_x = (delta.x * 15.0) as i32;
+                    let delta_y = (delta.y * 15.0) as i32;
+                    self.config.x = (self.config.x + delta_x).clamp(-10000, 10000);
+                    self.config.y = (self.config.y + delta_y).clamp(-10000, 10000);
+                }
 
-            ui.label(egui::RichText::new(status_text).color(color));
+                // Mouse cursor hint
+                if response.hovered() {
+                    ui.ctx().set_cursor_icon(if response.dragged() {
+                        egui::CursorIcon::Grabbing
+                    } else {
+                        egui::CursorIcon::Grab
+                    });
+                }
+
+                // Achtergrond grid van het canvas
+                painter.rect_filled(canvas_rect, 6.0, BG_INNER);
+                painter.rect_stroke(canvas_rect, 6.0, egui::Stroke::new(1.0, BORDER_COLOR));
+
+                let center_x = canvas_rect.center().x;
+                let center_y = canvas_rect.center().y;
+
+                // 1. Draw main physical monitor
+                let main_mon_rect = egui::Rect::from_center_size(
+                    egui::pos2(center_x + 35.0, center_y + 10.0),
+                    egui::vec2(100.0, 60.0),
+                );
+                painter.rect_filled(main_mon_rect, 4.0, egui::Color32::from_rgb(35, 42, 60));
+                painter.rect_stroke(main_mon_rect, 4.0, egui::Stroke::new(1.5, ACCENT_BLUE));
+                painter.text(
+                    main_mon_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "main\n(DP-1)",
+                    egui::FontId::monospace(10.0),
+                    TEXT_PRIMARY,
+                );
+
+                // 2. Draw Virtual Monitor (pos) - position based on config.x, config.y
+                let virt_x_offset = (self.config.x as f32 / 20.0).clamp(-85.0, 85.0);
+                let virt_y_offset = (self.config.y as f32 / 20.0).clamp(-45.0, 45.0);
+
+                let virt_mon_rect = egui::Rect::from_center_size(
+                    egui::pos2(center_x - 40.0 + virt_x_offset, center_y - 15.0 + virt_y_offset),
+                    egui::vec2(80.0, 52.0),
+                );
+
+                let (fill_col, stroke_col) = if self.monitor_exists {
+                    (egui::Color32::from_rgba_premultiplied(132, 204, 22, 50), ACCENT_LIME)
+                } else {
+                    (egui::Color32::from_rgba_premultiplied(148, 163, 184, 25), TEXT_MUTED)
+                };
+
+                let is_grabbed = response.dragged();
+                let actual_stroke = if is_grabbed {
+                    egui::Stroke::new(2.5, ACCENT_HOVER)
+                } else {
+                    egui::Stroke::new(1.5, stroke_col)
+                };
+
+                painter.rect_filled(virt_mon_rect, 4.0, fill_col);
+                painter.rect_stroke(virt_mon_rect, 4.0, actual_stroke);
+                painter.text(
+                    virt_mon_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &format!("{}\n{}x{}", self.config.name, self.config.width, self.config.height),
+                    egui::FontId::monospace(9.5),
+                    if self.monitor_exists { ACCENT_LIME } else { TEXT_MUTED },
+                );
+
+                // Instruction label at bottom of canvas
+                painter.text(
+                    egui::pos2(canvas_rect.min.x + 6.0, canvas_rect.max.y - 6.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    "↔ drag box to position",
+                    egui::FontId::monospace(9.0),
+                    TEXT_MUTED,
+                );
+            });
+
+            // Coordinate Fine Tuning Drag Values
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("position :").color(TEXT_MUTED).monospace().small());
+                ui.add(egui::DragValue::new(&mut self.config.x).prefix("x: "));
+                ui.add(egui::DragValue::new(&mut self.config.y).prefix("y: "));
+            });
         });
     }
 
-    fn render_log_card(&self, ui: &mut egui::Ui) {
-        card_frame().show(ui, |ui| {
+    /// Center Action Bar: `create` | `remove` | `start` | `stop`
+    fn render_action_bar(&mut self, ui: &mut egui::Ui, stopping: bool) {
+        panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
+
+            let can_create = !self.monitor_exists && !self.config.name.is_empty();
+            let can_remove = self.monitor_exists && !self.is_capturing();
+            let can_start = self.monitor_exists && !self.is_capturing() && !stopping;
+            let can_stop = self.is_capturing() && !stopping;
+
+            ui.columns(4, |cols| {
+                // Button 1: create
+                cols[0].scope(|ui| {
+                    set_button_style(ui, ACCENT_LIME, ACCENT_HOVER, BG_MAIN);
+                    if ui.add_enabled(can_create, egui::Button::new("create").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                        self.do_create();
+                    }
+                });
+
+                // Button 2: remove
+                cols[1].scope(|ui| {
+                    set_button_style(ui, DANGER_RED, DANGER_HOVER, TEXT_PRIMARY);
+                    if ui.add_enabled(can_remove, egui::Button::new("remove").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                        self.do_remove();
+                    }
+                });
+
+                // Button 3: start
+                cols[2].scope(|ui| {
+                    set_button_style(ui, ACCENT_BLUE, egui::Color32::from_rgb(129, 140, 248), TEXT_PRIMARY);
+                    if ui.add_enabled(can_start, egui::Button::new("start").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                        self.do_start_capture();
+                    }
+                });
+
+                // Button 4: stop
+                cols[3].scope(|ui| {
+                    set_button_style(ui, DANGER_RED, DANGER_HOVER, TEXT_PRIMARY);
+                    if ui.add_enabled(can_stop, egui::Button::new("stop").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                        self.do_stop_capture();
+                    }
+                });
+            });
+        });
+    }
+
+    /// Bottom-Left Panel: `log`
+    fn render_log_card(&self, ui: &mut egui::Ui) {
+        panel_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(200.0);
+
             ui.label(
-                egui::RichText::new("📜  Activity Log")
-                    .color(TEXT_PRIMARY)
+                egui::RichText::new("log")
+                    .color(ACCENT_LIME)
+                    .size(16.0)
+                    .monospace()
                     .strong(),
             );
             ui.add_space(8.0);
 
-            terminal_frame().show(ui, |ui| {
+            inner_frame().show(ui, |ui| {
                 egui::ScrollArea::vertical()
-                    .max_height(160.0)
-                    .auto_shrink([false, true])
+                    .max_height(140.0)
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 4.0;
+                        ui.spacing_mut().item_spacing.y = 3.0;
                         for entry in &self.log_entries {
                             let color = match entry.level {
                                 LogLevel::Info => TEXT_MUTED,
-                                LogLevel::Success => egui::Color32::from_rgb(100, 220, 100),
-                                LogLevel::Warning => egui::Color32::from_rgb(255, 200, 80),
-                                LogLevel::Error => DANGER,
+                                LogLevel::Success => ACCENT_LIME,
+                                LogLevel::Warning => egui::Color32::from_rgb(250, 204, 21),
+                                LogLevel::Error => DANGER_RED,
                             };
                             ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new(&entry.time)
-                                        .color(egui::Color32::from_rgb(80, 80, 100))
-                                        .monospace(),
+                                        .color(egui::Color32::from_rgb(90, 90, 110))
+                                        .monospace()
+                                        .size(10.0),
                                 );
                                 ui.label(
-                                    egui::RichText::new(&entry.message).color(color).monospace(),
+                                    egui::RichText::new(&entry.message)
+                                        .color(color)
+                                        .monospace()
+                                        .size(11.0),
                                 );
                             });
                         }
@@ -394,67 +452,183 @@ impl App {
             });
         });
     }
+
+    /// Bottom-Right Panel: `fps` (Performance Graph & Metrics)
+    fn render_graph_card(&mut self, ui: &mut egui::Ui) {
+        panel_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(200.0);
+
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("fps")
+                        .color(ACCENT_LIME)
+                        .size(16.0)
+                        .monospace()
+                        .strong(),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{:.1} FPS", self.current_fps))
+                            .color(ACCENT_LIME)
+                            .monospace()
+                            .strong(),
+                    );
+                });
+            });
+            ui.add_space(4.0);
+
+            // FPS Live Graph Canvas
+            inner_frame().show(ui, |ui| {
+                let (response, painter) = ui.allocate_painter(
+                    egui::vec2(ui.available_width(), 100.0),
+                    egui::Sense::hover(),
+                );
+                let rect = response.rect;
+
+                // Graph Background
+                painter.rect_filled(rect, 4.0, BG_INNER);
+                painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, BORDER_COLOR));
+
+                // 60 FPS reference target line
+                let target_y = rect.max.y - (60.0 / 75.0) * rect.height();
+                painter.line_segment(
+                    [egui::pos2(rect.min.x, target_y), egui::pos2(rect.max.x, target_y)],
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 70)),
+                );
+
+                // Build line points from self.fps_history
+                let history_len = self.fps_history.len();
+                if history_len > 1 {
+                    let mut points = Vec::with_capacity(history_len);
+                    let step_x = rect.width() / (history_len - 1) as f32;
+
+                    for (i, &fps_val) in self.fps_history.iter().enumerate() {
+                        let clamped_fps = fps_val.clamp(0.0, 75.0);
+                        let x = rect.min.x + i as f32 * step_x;
+                        let y = rect.max.y - (clamped_fps / 75.0) * (rect.height() - 8.0) - 4.0;
+                        points.push(egui::pos2(x, y));
+                    }
+
+                    // Draw area fill under graph
+                    let mut fill_points = points.clone();
+                    fill_points.push(egui::pos2(rect.max.x, rect.max.y));
+                    fill_points.push(egui::pos2(rect.min.x, rect.max.y));
+
+                    painter.add(egui::Shape::convex_polygon(
+                        fill_points,
+                        egui::Color32::from_rgba_premultiplied(132, 204, 22, 25),
+                        egui::Stroke::NONE,
+                    ));
+
+                    // Draw green line curve
+                    for w in points.windows(2) {
+                        painter.line_segment([w[0], w[1]], egui::Stroke::new(2.0, ACCENT_LIME));
+                    }
+                }
+
+                // X-axis time indicators (t-10s -> t)
+                painter.text(
+                    egui::pos2(rect.min.x + 6.0, rect.max.y - 12.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    "t - 10",
+                    egui::FontId::monospace(9.0),
+                    TEXT_MUTED,
+                );
+                painter.text(
+                    egui::pos2(rect.max.x - 6.0, rect.max.y - 12.0),
+                    egui::Align2::RIGHT_BOTTOM,
+                    "t",
+                    egui::FontId::monospace(9.0),
+                    TEXT_MUTED,
+                );
+            });
+
+            ui.add_space(6.0);
+
+            // Performance metrics row below graph
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 16.0;
+
+                // Packet loss
+                ui.label(egui::RichText::new("packet loss :").color(TEXT_MUTED).monospace().small());
+                ui.label(egui::RichText::new("0.0%").color(ACCENT_LIME).monospace().small());
+
+                // Tijd (elapsed stream duration)
+                ui.label(egui::RichText::new("tijd :").color(TEXT_MUTED).monospace().small());
+                let elapsed_str = match self.stream_start_time {
+                    Some(start) => {
+                        let secs = start.elapsed().unwrap_or_default().as_secs();
+                        format!("{:02}:{:02}", secs / 60, secs % 60)
+                    }
+                    None => "00:00".to_string(),
+                };
+                ui.label(egui::RichText::new(elapsed_str).color(TEXT_PRIMARY).monospace().small());
+            });
+        });
+    }
 }
 
-// ─── Aangepaste Egui Component Frames ─────────────────────────
+// ─── Styling Helper Frames & Functions ─────────────────────────
 
 fn configure_style(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
 
-    // Algemene spacing
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(14.0, 8.0);
+    style.spacing.button_padding = egui::vec2(12.0, 6.0);
 
-    // Afgeronde hoeken voor alles
-    style.visuals.window_rounding = egui::Rounding::same(10.0);
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.open.rounding = egui::Rounding::same(8.0);
+    style.visuals.window_rounding = egui::Rounding::same(8.0);
+    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(6.0);
+    style.visuals.widgets.inactive.rounding = egui::Rounding::same(6.0);
+    style.visuals.widgets.hovered.rounding = egui::Rounding::same(6.0);
+    style.visuals.widgets.active.rounding = egui::Rounding::same(6.0);
 
-    // Dark theme overrides
     style.visuals.dark_mode = true;
-    style.visuals.code_bg_color = BG_MAIN;
-
-    // Tekst kleuren
+    style.visuals.code_bg_color = BG_INNER;
     style.visuals.override_text_color = Some(TEXT_PRIMARY);
 
-    // Input velden (zoals text edits en dragvalues) iets donkerder dan de panelen
-    style.visuals.widgets.inactive.bg_fill = BG_MAIN;
-    style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0f32, TEXT_PRIMARY);
-    style.visuals.widgets.hovered.bg_fill = BG_MAIN;
-    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0f32, ACCENT);
-    style.visuals.widgets.active.bg_fill = BG_MAIN;
-    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5f32, ACCENT);
+    // Inputs & DragValues
+    style.visuals.widgets.inactive.bg_fill = BG_INNER;
+    style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, TEXT_PRIMARY);
+    style.visuals.widgets.hovered.bg_fill = BG_INNER;
+    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, ACCENT_LIME);
+    style.visuals.widgets.active.bg_fill = BG_INNER;
+    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, ACCENT_LIME);
 
     ctx.set_style(style);
 }
 
-fn card_frame() -> egui::Frame {
+fn panel_frame() -> egui::Frame {
     egui::Frame {
         fill: BG_PANEL,
-        rounding: egui::Rounding::same(12.0),
-        inner_margin: egui::Margin::same(20.0),
-        stroke: egui::Stroke::new(1.0f32, egui::Color32::from_rgb(35, 35, 45)),
+        rounding: egui::Rounding::same(10.0),
+        inner_margin: egui::Margin::same(14.0),
+        stroke: egui::Stroke::new(1.0, BORDER_COLOR),
         ..Default::default()
     }
 }
 
-fn terminal_frame() -> egui::Frame {
+fn inner_frame() -> egui::Frame {
     egui::Frame {
-        fill: BG_TERMINAL,
-        rounding: egui::Rounding::same(8.0),
-        inner_margin: egui::Margin::same(12.0),
-        stroke: egui::Stroke::NONE,
+        fill: BG_INNER,
+        rounding: egui::Rounding::same(6.0),
+        inner_margin: egui::Margin::same(10.0),
+        stroke: egui::Stroke::new(1.0, BORDER_COLOR),
         ..Default::default()
     }
 }
 
-// Geeft een widget terug die levenslang onafhankelijk is (geen lifetime errors meer)
+fn set_button_style(ui: &mut egui::Ui, bg: egui::Color32, hover: egui::Color32, fg: egui::Color32) {
+    let style = ui.style_mut();
+    style.visuals.widgets.inactive.bg_fill = bg;
+    style.visuals.widgets.hovered.bg_fill = hover;
+    style.visuals.widgets.active.bg_fill = hover;
+    style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, fg);
+    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, fg);
+}
+
 fn ghost_button(text: impl Into<String>, color: egui::Color32) -> impl egui::Widget {
-    egui::Button::new(egui::RichText::new(text.into()).color(color))
+    egui::Button::new(egui::RichText::new(text.into()).color(color).monospace().small())
         .fill(egui::Color32::TRANSPARENT)
         .stroke(egui::Stroke::NONE)
-        .min_size(egui::vec2(90.0, 32.0))
 }

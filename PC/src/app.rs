@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, SystemTime};
 
+use std::collections::VecDeque;
+
 /// Centrale applicatie-state. Bevat alle data en business logic.
 /// De GUI (zie `gui.rs`) leest en schrijft via pub(crate) velden en
 /// roept pub-methodes aan om acties te triggeren.
@@ -27,6 +29,13 @@ pub struct App {
     pub signal_flag: Option<Arc<AtomicBool>>,
     /// Voorkomt dat shutdown meerdere keren wordt aangeroepen.
     shutdown_done: bool,
+
+    // Performance & Stats tracking for the graph
+    pub fps_history: VecDeque<f32>,
+    pub current_fps: f32,
+    pub stream_start_time: Option<SystemTime>,
+    last_frame_count: u64,
+    last_fps_calc_time: Option<SystemTime>,
 }
 
 impl App {
@@ -40,6 +49,11 @@ impl App {
     }
 
     fn with_signal_flag_opt(signal_flag: Option<Arc<AtomicBool>>) -> Self {
+        let mut fps_history = VecDeque::with_capacity(60);
+        for _ in 0..60 {
+            fps_history.push_back(0.0);
+        }
+
         let mut app = Self {
             config: MonitorConfig::default(),
             monitors: Vec::new(),
@@ -52,6 +66,11 @@ impl App {
             stop_result_rx: None,
             signal_flag,
             shutdown_done: false,
+            fps_history,
+            current_fps: 0.0,
+            stream_start_time: None,
+            last_frame_count: 0,
+            last_fps_calc_time: None,
         };
         app.log(
             "Hyprland Virtual Display controller started.",
@@ -95,15 +114,54 @@ impl App {
         }
     }
 
-    /// Wordt elke GUI-frame aangeroepen; voert auto-refresh uit indien nodig.
+    /// Wordt elke GUI-frame aangeroepen; voert auto-refresh uit en update FPS statistieken.
     pub fn tick(&mut self) {
-        if !self.auto_refresh {
-            return;
-        }
-        if let Some(last) = self.last_refresh {
-            if last.elapsed().unwrap_or_default() >= Duration::from_secs(2) {
-                self.refresh();
+        if self.auto_refresh {
+            if let Some(last) = self.last_refresh {
+                if last.elapsed().unwrap_or_default() >= Duration::from_secs(2) {
+                    self.refresh();
+                }
             }
+        }
+
+        // FPS statistieken berekenen en history bijhouden voor de grafiek
+        let now = SystemTime::now();
+        let (current_frames, is_capturing) = match self.capture.as_ref().map(|c| c.status()) {
+            Some(capture::CaptureStatus::Capturing { frames, .. }) => (frames, true),
+            _ => (0, false),
+        };
+
+        if !is_capturing {
+            self.stream_start_time = None;
+            self.current_fps = 0.0;
+        } else if self.stream_start_time.is_none() {
+            self.stream_start_time = Some(now);
+            self.last_frame_count = current_frames;
+            self.last_fps_calc_time = Some(now);
+        }
+
+        let calc_due = self.last_fps_calc_time
+            .map_or(true, |t| t.elapsed().unwrap_or_default() >= Duration::from_millis(500));
+
+        if calc_due {
+            if is_capturing {
+                if let Some(last_time) = self.last_fps_calc_time {
+                    let elapsed_secs = last_time.elapsed().unwrap_or_default().as_secs_f32();
+                    if elapsed_secs > 0.0 {
+                        let delta_frames = current_frames.saturating_sub(self.last_frame_count) as f32;
+                        let raw_fps = delta_frames / elapsed_secs;
+                        // Smooth transition
+                        self.current_fps = self.current_fps * 0.4 + raw_fps * 0.6;
+                    }
+                }
+                self.last_frame_count = current_frames;
+                self.last_fps_calc_time = Some(now);
+            } else {
+                self.current_fps = 0.0;
+            }
+
+            self.fps_history.pop_front();
+            self.fps_history.push_back(self.current_fps);
         }
     }
 
