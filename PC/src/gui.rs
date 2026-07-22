@@ -164,6 +164,69 @@ impl App {
                 .spacing([12.0, 10.0])
                 .show(ui, |ui| {
                     // identifier :
+                    //     ui.label(
+                    //         egui::RichText::new("identifier :")
+                    //             .color(TEXT_MUTED)
+                    //             .monospace(),
+                    //     );
+                    //     ui.horizontal(|ui| {
+                    //         ui.add_enabled_ui(!self.monitor_exists, |ui| {
+                    //             ui.add(
+                    //                 egui::TextEdit::singleline(&mut self.config.name)
+                    //                     .desired_width(120.0),
+                    //             );
+                    //         });
+                    //         if self.monitor_exists {
+                    //             ui.label(
+                    //                 egui::RichText::new("✓ active")
+                    //                     .color(ACCENT_LIME)
+                    //                     .monospace()
+                    //                     .small(),
+                    //             );
+                    //         }
+                    //     });
+                    //     ui.end_row();
+
+                    //     // res :
+                    //     ui.label(egui::RichText::new("res :").color(TEXT_MUTED).monospace());
+                    //     ui.horizontal(|ui| {
+                    //         ui.add(
+                    //             egui::DragValue::new(&mut self.config.width)
+                    //                 .range(320..=7680)
+                    //                 .suffix(" px"),
+                    //         );
+                    //         ui.label(egui::RichText::new("×").color(TEXT_MUTED));
+                    //         ui.add(
+                    //             egui::DragValue::new(&mut self.config.height)
+                    //                 .range(240..=4320)
+                    //                 .suffix(" px"),
+                    //         );
+                    //     });
+                    //     ui.end_row();
+
+                    //     // frame rate :
+                    //     ui.label(
+                    //         egui::RichText::new("frame rate :")
+                    //             .color(TEXT_MUTED)
+                    //             .monospace(),
+                    //     );
+                    //     ui.add(
+                    //         egui::DragValue::new(&mut self.config.fps)
+                    //             .range(1..=240)
+                    //             .suffix(" Hz"),
+                    //     );
+                    //     ui.end_row();
+
+                    //     // scale :
+                    //     ui.label(egui::RichText::new("scale :").color(TEXT_MUTED).monospace());
+                    //     ui.add(
+                    //         egui::DragValue::new(&mut self.config.scale)
+                    //             .range(0.5f32..=3.0f32)
+                    //             .speed(0.1),
+                    //     );
+                    //     ui.end_row();
+                    // });
+
                     ui.label(
                         egui::RichText::new("identifier :")
                             .color(TEXT_MUTED)
@@ -188,17 +251,24 @@ impl App {
                     ui.end_row();
 
                     // res :
-                    ui.label(egui::RichText::new("res :").color(TEXT_MUTED).monospace());
+                    ui.label(egui::RichText::new("width :").color(TEXT_MUTED).monospace());
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.config.width)
                                 .range(320..=7680)
                                 .suffix(" px"),
                         );
-                        ui.label(egui::RichText::new("×").color(TEXT_MUTED));
+                    });
+                    ui.end_row();
+                    ui.label(
+                        egui::RichText::new("height :")
+                            .color(TEXT_MUTED)
+                            .monospace(),
+                    );
+                    ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.config.height)
-                                .range(240..=4320)
+                                .range(320..=7680)
                                 .suffix(" px"),
                         );
                     });
@@ -226,7 +296,6 @@ impl App {
                     );
                     ui.end_row();
                 });
-
             ui.add_space(25.0);
             inner_frame().show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -238,6 +307,212 @@ impl App {
             });
         });
     }
+
+    /// Top-Right Panel: `pos` (Monitor 2D visualizer with interactive dragging)
+    // // fn render_pos_card(&mut self, ui: &mut egui::Ui) {
+    //     panel_frame().show(ui, |ui| {
+    //         ui.set_width(ui.available_width());
+    //         ui.set_min_height(230.0);
+
+    //         ui.horizontal(|ui| {
+    //             ui.label(
+    //                 egui::RichText::new("position")
+    //                     .color(ACCENT_LIME)
+    //                     .size(16.0)
+    //                     .monospace()
+    //                     .strong(),
+    //             );
+    //             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    //                 ui.label(
+    //                     (egui::RichText::new(format!(
+    //                         "x: {}  y: {}",
+    //                         self.config.x, self.config.y
+    //                     ))
+    //                     .color(ACCENT_LIME))
+    //                     .monospace()
+    //                     .size(16.0),
+    //                 );
+    //             });
+    //         });
+    //         ui.add_space(4.0);
+
+    //         inner_frame().show(ui, |ui| {
+    //             let (response, painter) = ui.allocate_painter(
+    //                 egui::vec2(ui.available_width(), 180.0),
+    //                 egui::Sense::click_and_drag(),
+    //             );
+
+    //             let canvas_rect = response.rect;
+
+    //             // --- nwg-displays logica ---
+
+    //             let scale = 0.065; // 1 screen pixel = 0.065 canvas pixels (schaal)
+
+    //             // Hoofdmonitor (we gaan uit van een 1920x1080 scherm op 0,0)
+    //             let main_w = 1920.0;
+    //             let main_h = 1080.0;
+    //             let main_x = 0.0;
+    //             let main_y = 0.0;
+
+    //             // Virtuele monitor eigenschappen uit de config
+    //             let virt_w = self.config.width as f32;
+    //             let virt_h = self.config.height as f32;
+
+    //             // --- Sleep & Raster Logica (90px stappen) ---
+
+    //             if response.dragged() {
+    //                 let delta = response.drag_delta();
+
+    //                 // Reken canvas sleepbeweging om naar scherm-pixels
+    //                 let dx = (delta.x / scale).round() as i32;
+    //                 let dy = (delta.y / scale).round() as i32;
+
+    //                 self.config.x += dx;
+    //                 self.config.y += dy;
+
+    //                 // Discretiseer naar een raster van 90px
+    //                 let grid_step = 90;
+    //                 self.config.x = ((self.config.x as f32 / grid_step as f32).round()
+    //                     * grid_step as f32) as i32;
+    //                 self.config.y = ((self.config.y as f32 / grid_step as f32).round()
+    //                     * grid_step as f32) as i32;
+    //             }
+
+    //             // Cursor hints
+    //             if response.hovered() {
+    //                 ui.ctx().set_cursor_icon(if response.dragged() {
+    //                     egui::CursorIcon::Grabbing
+    //                 } else {
+    //                     egui::CursorIcon::Grab
+    //                 });
+    //             }
+
+    //             // --- Teken Logica ---
+
+    //             painter.rect_filled(canvas_rect, 2.0, BG_INNER);
+    //             painter.rect_stroke(canvas_rect, 2.0, egui::Stroke::new(1.0, BORDER_COLOR));
+
+    //             let center_x = canvas_rect.center().x;
+    //             let center_y = canvas_rect.center().y;
+
+    //             // Bepaal het nulpunt op het canvas (zodat het hoofd-scherm min of meer in het midden ligt)
+    //             let origin_x = center_x - (main_w / 2.0) * scale;
+    //             let origin_y = center_y - (main_h / 2.0) * scale;
+
+    //             // Hulpfunctie: Vertaal scherm-coördinaten naar canvas-punten
+    //             let to_canvas = |sx: f32, sy: f32| -> egui::Pos2 {
+    //                 egui::pos2(origin_x + sx * scale, origin_y + sy * scale)
+    //             };
+
+    //             // --- Teken het 90px Raster ---
+    //             let grid_step_canvas = 90.0 * scale;
+
+    //             // Verticale lijnen
+    //             let mut grid_x = origin_x;
+    //             while grid_x > canvas_rect.min.x {
+    //                 grid_x -= grid_step_canvas;
+    //             }
+    //             while grid_x < canvas_rect.max.x {
+    //                 painter.line_segment(
+    //                     [
+    //                         egui::pos2(grid_x, canvas_rect.min.y),
+    //                         egui::pos2(grid_x, canvas_rect.max.y),
+    //                     ],
+    //                     egui::Stroke::new(0.5, egui::Color32::from_rgb(25, 25, 35)), // Zeer subtiel
+    //                 );
+    //                 grid_x += grid_step_canvas;
+    //             }
+
+    //             // Horizontale lijnen
+    //             let mut grid_y = origin_y;
+    //             while grid_y > canvas_rect.min.y {
+    //                 grid_y -= grid_step_canvas;
+    //             }
+    //             while grid_y < canvas_rect.max.y {
+    //                 painter.line_segment(
+    //                     [
+    //                         egui::pos2(canvas_rect.min.x, grid_y),
+    //                         egui::pos2(canvas_rect.max.x, grid_y),
+    //                     ],
+    //                     egui::Stroke::new(0.5, egui::Color32::from_rgb(25, 25, 35)), // Zeer subtiel
+    //                 );
+    //                 grid_y += grid_step_canvas;
+    //             }
+
+    //             // 1. Teken hoofdmonitor (vanaf zijn linkerbovenhoek)
+    //             let main_top_left = to_canvas(main_x, main_y);
+    //             let main_rect = egui::Rect::from_min_size(
+    //                 main_top_left,
+    //                 egui::vec2(main_w * scale, main_h * scale),
+    //             );
+
+    //             painter.rect_filled(main_rect, 2.0, egui::Color32::from_rgb(35, 42, 60));
+    //             painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(1.5, ACCENT_BLUE));
+    //             painter.text(
+    //                 main_rect.center(),
+    //                 egui::Align2::CENTER_CENTER,
+    //                 "main\n(DP-1)",
+    //                 egui::FontId::monospace(10.0),
+    //                 TEXT_PRIMARY,
+    //             );
+
+    //             // 2. Teken virtuele monitor (vanaf zijn linkerbovenhoek)
+    //             let virt_top_left =
+    //                 to_canvas((self.config.x as f32 - 1440.0), self.config.y as f32);
+
+    //             let virt_rect = egui::Rect::from_min_size(
+    //                 virt_top_left,
+    //                 egui::vec2(virt_w * scale, virt_h * scale),
+    //             );
+
+    //             let (fill_col, stroke_col) = if self.monitor_exists {
+    //                 (
+    //                     egui::Color32::from_rgba_premultiplied(132, 204, 22, 50),
+    //                     ACCENT_LIME,
+    //                 )
+    //             } else {
+    //                 (
+    //                     egui::Color32::from_rgba_premultiplied(148, 163, 184, 25),
+    //                     TEXT_MUTED,
+    //                 )
+    //             };
+
+    //             let is_grabbed = response.dragged();
+
+    //             let actual_stroke = if is_grabbed {
+    //                 egui::Stroke::new(2.5, ACCENT_HOVER)
+    //             } else {
+    //                 egui::Stroke::new(1.5, stroke_col)
+    //             };
+
+    //             painter.rect_filled(virt_rect, 2.0, fill_col);
+    //             painter.rect_stroke(virt_rect, 2.0, actual_stroke);
+    //             painter.text(
+    //                 virt_rect.center(),
+    //                 egui::Align2::CENTER_CENTER,
+    //                 &format!(
+    //                     "{}\n{}x{}",
+    //                     self.config.name, self.config.width, self.config.height
+    //                 ),
+    //                 egui::FontId::monospace(9.5),
+    //                 if self.monitor_exists {
+    //                     ACCENT_LIME
+    //                 } else {
+    //                     TEXT_MUTED
+    //                 },
+    //             );
+
+    //             // Instructie label
+    //             painter.text(
+    //                 egui::pos2(canvas_rect.min.x + 6.0, canvas_rect.max.y - 6.0),
+    //                 egui::Align2::LEFT_BOTTOM,
+    //                 "↔ drag to position (90px grid)",
+    //                 egui::FontId::monospace(9.0),
+    //                 TEXT_MUTED,
+    //             );
+    //         });
+    //     });
+    // }
 
     /// Top-Right Panel: `pos` (Monitor 2D visualizer with interactive dragging)
     fn render_pos_card(&mut self, ui: &mut egui::Ui) {
@@ -269,7 +544,7 @@ impl App {
 
             inner_frame().show(ui, |ui| {
                 let (response, painter) = ui.allocate_painter(
-                    egui::vec2(ui.available_width(), 180.0), // Iets groter gemaakt voor betere verhoudingen
+                    egui::vec2(ui.available_width(), 180.0),
                     egui::Sense::click_and_drag(),
                 );
 
@@ -277,121 +552,188 @@ impl App {
 
                 // --- nwg-displays logica ---
 
-                let scale = 0.05; // 1 screen pixel = 0.1 canvas pixels (schaal)
-
-                let snap_dist = 50.0; // Afstand in screen-pixels waarop hij magnetisch vastklikt
+                let scale = 0.065; // 1 screen pixel = 0.065 canvas pixels (schaal)
 
                 // Hoofdmonitor (we gaan uit van een 1920x1080 scherm op 0,0)
-
                 let main_w = 1920.0;
-
                 let main_h = 1080.0;
-
                 let main_x = 0.0;
-
                 let main_y = 0.0;
 
                 // Virtuele monitor eigenschappen uit de config
-
                 let virt_w = self.config.width as f32;
-
                 let virt_h = self.config.height as f32;
 
-                // --- Sleep & Snap Logica ---
+                // --- Sleep & Raster Logica (1:1 beweging, 90px raster bij loslaten) ---
+
+                // if response.drag_started() {
+                //     // Sla de startpositie op als float om precisie te behouden tijdens het slepen
+                //     ui.memory_mut(|m| {
+                //         m.data.insert_temp("virt_raw_x", self.config.x as f32);
+                //         m.data.insert_temp("virt_raw_y", self.config.y as f32);
+                //     });
+                // }
+
+                // if response.dragged() {
+                //     let delta = response.drag_delta();
+
+                //     // Haal de raw float posities op en update ze met de cursor delta
+                //     let raw_x = ui.memory_mut(|m| {
+                //         let val = m.data.get_temp_mut_or("virt_raw_x", self.config.x as f32);
+                //         *val += delta.x / scale;
+                //         *val
+                //     });
+
+                //     let raw_y = ui.memory_mut(|m| {
+                //         let val = m.data.get_temp_mut_or("virt_raw_y", self.config.y as f32);
+                //         *val += delta.y / scale;
+                //         *val
+                //     });
+
+                //     // Update de monitor positie 1:1 met de cursor (zonder afronding)
+                //     self.config.x = raw_x as i32;
+                //     self.config.y = raw_y as i32;
+                // }
+
+                // if response.drag_stopped() {
+                //     // Discretiseer naar 90px raster bij het loslaten
+                //     let grid_step = 90;
+                //     self.config.x = ((self.config.x as f32 / grid_step as f32).round()
+                //         * grid_step as f32) as i32;
+                //     self.config.y = ((self.config.y as f32 / grid_step as f32).round()
+                //         * grid_step as f32) as i32;
+
+                //     // Reset memory naar de afgeronde waarde
+                //     ui.memory_mut(|m| {
+                //         m.data.insert_temp("virt_raw_x", self.config.x as f32);
+                //         m.data.insert_temp("virt_raw_y", self.config.y as f32);
+                //     });
+                // }
+
+                // // Cursor hints
+                // if response.hovered() {
+                //     ui.ctx().set_cursor_icon(if response.dragged() {
+                //         egui::CursorIcon::Grabbing
+                //     } else {
+                //         egui::CursorIcon::Grab
+                //     });
+                // }
+
+                // --- Sleep & Raster Logica (1:1 beweging, 90px raster bij loslaten) ---
+
+                if response.drag_started() {
+                    // Sla de startpositie op als float om precisie te behouden tijdens het slepen
+                    ui.memory_mut(|m| {
+                        m.data
+                            .insert_temp(egui::Id::new("virt_raw_x"), self.config.x as f32);
+                        m.data
+                            .insert_temp(egui::Id::new("virt_raw_y"), self.config.y as f32);
+                    });
+                }
 
                 if response.dragged() {
                     let delta = response.drag_delta();
 
-                    // Reken canvas sleepbeweging om naar scherm-pixels
+                    // Haal de raw float posities op en update ze met de cursor delta
+                    let raw_x = ui.memory_mut(|m| {
+                        let val = m
+                            .data
+                            .get_temp_mut_or(egui::Id::new("virt_raw_x"), self.config.x as f32);
+                        *val += delta.x / scale;
+                        *val
+                    });
 
-                    let dx = (delta.x / scale).round() as i32;
+                    let raw_y = ui.memory_mut(|m| {
+                        let val = m
+                            .data
+                            .get_temp_mut_or(egui::Id::new("virt_raw_y"), self.config.y as f32);
+                        *val += delta.y / scale;
+                        *val
+                    });
 
-                    let dy = (delta.y / scale).round() as i32;
-
-                    self.config.x += dx;
-
-                    self.config.y += dy;
-
-                    // Randen berekenen voor snapping
-
-                    let v_left = self.config.x as f32;
-
-                    let v_right = self.config.x as f32 + virt_w;
-
-                    let v_top = self.config.y as f32;
-
-                    let v_bottom = self.config.y as f32 + virt_h;
-
-                    let m_right = main_x + main_w;
-
-                    let m_left = main_x;
-
-                    let m_bottom = main_y + main_h;
-
-                    let m_top = main_y;
-
-                    // Horizontaal snappen (X-as)
-
-                    if (v_left - m_right).abs() < snap_dist {
-                        self.config.x = m_right as i32;
-                    } else if (v_right - m_left).abs() < snap_dist {
-                        self.config.x = (m_left - virt_w) as i32;
-                    }
-
-                    // Verticaal snappen (Y-as)
-
-                    if (v_top - m_bottom).abs() < snap_dist {
-                        self.config.y = m_bottom as i32;
-                    } else if (v_bottom - m_top).abs() < snap_dist {
-                        self.config.y = (m_top - virt_h) as i32;
-                    }
+                    // Update de monitor positie 1:1 met de cursor (zonder afronding)
+                    self.config.x = raw_x as i32;
+                    self.config.y = raw_y as i32;
                 }
 
-                // Cursor hints
+                if response.drag_stopped() {
+                    // Discretiseer naar 90px raster bij het loslaten
+                    let grid_step = 90;
+                    self.config.x = ((self.config.x as f32 / grid_step as f32).round()
+                        * grid_step as f32) as i32;
+                    self.config.y = ((self.config.y as f32 / grid_step as f32).round()
+                        * grid_step as f32) as i32;
 
-                if response.hovered() {
-                    ui.ctx().set_cursor_icon(if response.dragged() {
-                        egui::CursorIcon::Grabbing
-                    } else {
-                        egui::CursorIcon::Grab
+                    // Reset memory naar de afgeronde waarde
+                    ui.memory_mut(|m| {
+                        m.data
+                            .insert_temp(egui::Id::new("virt_raw_x"), self.config.x as f32);
+                        m.data
+                            .insert_temp(egui::Id::new("virt_raw_y"), self.config.y as f32);
                     });
                 }
 
                 // --- Teken Logica ---
 
                 painter.rect_filled(canvas_rect, 2.0, BG_INNER);
-
                 painter.rect_stroke(canvas_rect, 2.0, egui::Stroke::new(1.0, BORDER_COLOR));
 
                 let center_x = canvas_rect.center().x;
-
                 let center_y = canvas_rect.center().y;
 
                 // Bepaal het nulpunt op het canvas (zodat het hoofd-scherm min of meer in het midden ligt)
-
                 let origin_x = center_x - (main_w / 2.0) * scale;
-
                 let origin_y = center_y - (main_h / 2.0) * scale;
 
                 // Hulpfunctie: Vertaal scherm-coördinaten naar canvas-punten
-
                 let to_canvas = |sx: f32, sy: f32| -> egui::Pos2 {
                     egui::pos2(origin_x + sx * scale, origin_y + sy * scale)
                 };
 
+                // --- Teken het 90px Raster ---
+                let grid_step_canvas = 90.0 * scale;
+
+                // Verticale lijnen
+                let mut grid_x = origin_x;
+                while grid_x > canvas_rect.min.x {
+                    grid_x -= grid_step_canvas;
+                }
+                while grid_x < canvas_rect.max.x {
+                    painter.line_segment(
+                        [
+                            egui::pos2(grid_x, canvas_rect.min.y),
+                            egui::pos2(grid_x, canvas_rect.max.y),
+                        ],
+                        egui::Stroke::new(0.5, egui::Color32::from_rgb(25, 25, 35)), // Zeer subtiel
+                    );
+                    grid_x += grid_step_canvas;
+                }
+
+                // Horizontale lijnen
+                let mut grid_y = origin_y;
+                while grid_y > canvas_rect.min.y {
+                    grid_y -= grid_step_canvas;
+                }
+                while grid_y < canvas_rect.max.y {
+                    painter.line_segment(
+                        [
+                            egui::pos2(canvas_rect.min.x, grid_y),
+                            egui::pos2(canvas_rect.max.x, grid_y),
+                        ],
+                        egui::Stroke::new(0.5, egui::Color32::from_rgb(25, 25, 35)), // Zeer subtiel
+                    );
+                    grid_y += grid_step_canvas;
+                }
+
                 // 1. Teken hoofdmonitor (vanaf zijn linkerbovenhoek)
-
                 let main_top_left = to_canvas(main_x, main_y);
-
                 let main_rect = egui::Rect::from_min_size(
                     main_top_left,
                     egui::vec2(main_w * scale, main_h * scale),
                 );
 
                 painter.rect_filled(main_rect, 2.0, egui::Color32::from_rgb(35, 42, 60));
-
                 painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(1.5, ACCENT_BLUE));
-
                 painter.text(
                     main_rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -401,7 +743,6 @@ impl App {
                 );
 
                 // 2. Teken virtuele monitor (vanaf zijn linkerbovenhoek)
-
                 let virt_top_left =
                     to_canvas((self.config.x as f32 - 1440.0), self.config.y as f32);
 
@@ -431,9 +772,7 @@ impl App {
                 };
 
                 painter.rect_filled(virt_rect, 2.0, fill_col);
-
                 painter.rect_stroke(virt_rect, 2.0, actual_stroke);
-
                 painter.text(
                     virt_rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -450,11 +789,10 @@ impl App {
                 );
 
                 // Instructie label
-
                 painter.text(
                     egui::pos2(canvas_rect.min.x + 6.0, canvas_rect.max.y - 6.0),
                     egui::Align2::LEFT_BOTTOM,
-                    "↔ drag to position (snaps to edges)",
+                    "↔ drag to position (snaps to 90px grid)",
                     egui::FontId::monospace(9.0),
                     TEXT_MUTED,
                 );
@@ -466,6 +804,7 @@ impl App {
     fn render_action_bar(&mut self, ui: &mut egui::Ui, stopping: bool) {
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.set_height(15.0);
 
             let can_create = !self.monitor_exists && !self.config.name.is_empty();
             let can_remove = self.monitor_exists && !self.is_capturing();
@@ -476,7 +815,6 @@ impl App {
                 // Button 1: create
                 cols[0].scope(|ui| {
                     set_button_style(ui, ACCENT_LIME, ACCENT_HOVER, BG_MAIN);
-
                     let button_text = if self.monitor_exists {
                         "Update Config"
                     } else {
