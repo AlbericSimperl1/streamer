@@ -1,0 +1,29 @@
+# ==========================================
+# macOS / System
+# ==========================================
+.DS_Store
+.netrc
+
+# ==========================================
+# IPAD Subproject (Swift / Xcode)
+# ==========================================
+IPAD/.build/
+IPAD/.swiftpm/
+IPAD/Packages/
+IPAD/xcuserdata/
+IPAD/DerivedData/
+IPAD/.swiftpm/configuration/registries.json
+IPAD/.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+IPAD/xtool/
+IPAD/Sources/CRustCore/lib/*.a
+
+# ==========================================
+# PC Subproject (Rust / Cargo)
+# ==========================================
+PC/target/
+PC/rust_core/target/
+PC/rust_core/Cargo.lock
+
+# Generic Fallbacks (pakt target/ en .build/ overal in het project)
+**/target/
+**/.build/
