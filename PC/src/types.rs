@@ -36,7 +36,7 @@ impl Default for MonitorConfig {
             width: 1440, // ipad 4/3
             height: 1080,
             fps: 60,
-            x: 0,
+            x: -1440,
             y: 0,
             scale: 1.0,
         }
