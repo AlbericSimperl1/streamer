@@ -242,17 +242,26 @@ pub fn run_capture(
 
     log::info!("pw stream connected to node {node_id}");
 
-    // Periodically check the stop flag via an idle source that re-arms itself.
-    // This ensures the main loop breaks even when no frames arrive (e.g. the
-    // virtual monitor is idle / compositor not sending anything).
-    let stop_for_idle = stop_flag.clone();
-    let _idle_guard = mainloop.loop_().add_idle(true, move || {
-        if stop_for_idle.load(Ordering::SeqCst) {
+    // Periodisch de stop_flag controleren via een PipeWire timer.
+    //
+    // BELANGRIJK: de vorige implementatie gebruikte `add_idle(true, ...)` wat
+    // een spin-loop was die elke event-loop iteratie draaide. Dit blokkeerde
+    // de PipeWire process callbacks waardoor frames niet werden afgeleverd
+    // (het "1 frame" probleem). Een timer met 100ms interval laat de event
+    // loop vrij om frames te dispatchen.
+    let stop_for_timer = stop_flag.clone();
+    let _timer = mainloop.loop_().add_timer(move |_expirations| {
+        if stop_for_timer.load(Ordering::SeqCst) {
             unsafe {
                 pw::sys::pw_main_loop_quit(mainloop_raw);
             }
         }
     });
+    // Eerste check na 100ms, daarna elke 100ms herhalen.
+    _timer.update_timer(
+        Some(std::time::Duration::from_millis(100)),
+        Some(std::time::Duration::from_millis(100)),
+    );
 
     mainloop.run();
 

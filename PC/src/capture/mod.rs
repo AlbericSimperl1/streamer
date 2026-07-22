@@ -182,24 +182,32 @@ fn run_capture_loop(
 }
 
 /// Runs on the `hyprpad-encoder` thread. Receives frames and pumps them into
-/// FFmpeg.
+/// FFmpeg at a constant framerate.
 fn run_encoder(
     rx: std::sync::mpsc::Receiver<Frame>,
     stop_flag: Arc<AtomicBool>,
     status: Arc<Mutex<CaptureStatus>>,
     output_path: String,
 ) {
-    let first = match rx.recv() {
-        Ok(f) => f,
-        Err(_) => {
-            set_status(&status, CaptureStatus::Error("No frames received".into()));
+    // 1. Wacht op het allereerste frame (met 100ms timeout om stop_flag te respecteren).
+    let mut last_frame = loop {
+        if stop_flag.load(Ordering::SeqCst) {
             return;
+        }
+        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(f) => break f,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                set_status(&status, CaptureStatus::Error("No frames received from PipeWire".into()));
+                return;
+            }
         }
     };
 
-    let width = first.width;
-    let height = first.height;
+    let width = last_frame.width;
+    let height = last_frame.height;
     let fps = 30;
+    let frame_interval = std::time::Duration::from_nanos(1_000_000_000 / fps as u64); // ~33.3ms
 
     let mut enc = match encoder::Encoder::start(width, height, fps, &output_path) {
         Ok(e) => e,
@@ -223,31 +231,57 @@ fn run_encoder(
     );
 
     let mut frames: u64 = 0;
-    if push_frame(&mut enc, &first).is_err() {
-        finalize(&mut enc, &status, &output_path, frames, true);
-        return;
-    }
-    frames += 1;
-    update_frame_count(&status, &output_path, frames);
+    let mut next_target = std::time::Instant::now();
 
-    // OPGESCHOOND: Maak gebruik van een zuivere, blokkerende recv().
-    // Als de opname stopt, sluit PipeWire af en dropt tx, wat de loop gracieus breekt.
+    // Loop tot stop_flag gezet is
     while !stop_flag.load(Ordering::SeqCst) {
-        let frame = match rx.recv() {
-            Ok(f) => f,
-            Err(_) => break, // Channel gedisconnect (PipeWire loop is gestopt)
+        let now = std::time::Instant::now();
+        let timeout = if next_target > now {
+            next_target - now
+        } else {
+            std::time::Duration::ZERO
         };
 
-        if frame.width != width || frame.height != height {
-            // Resolutie gewijzigd mid-stream — stop gracieus.
+        // Probeer een nieuw frame van PipeWire te halen.
+        // Als de virtuele monitor niet veranderd is (statisch scherm), geeft PipeWire GEEN nieuwe frames.
+        // In dat geval valt recv_timeout droog, en hergebruiken we `last_frame`.
+        match rx.recv_timeout(timeout) {
+            Ok(new_frame) => {
+                if new_frame.width == width && new_frame.height == height {
+                    last_frame = new_frame;
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Niks ontvangen binnen timeout window (scherm is statisch) -> we herhalen last_frame
+            }
+        }
+
+        // Stuur ook eventuele overtollige gebufferde frames door naar het nieuwste frame
+        while let Ok(new_frame) = rx.try_recv() {
+            if new_frame.width == width && new_frame.height == height {
+                last_frame = new_frame;
+            }
+        }
+
+        // Push frame naar FFmpeg (stdin)
+        if push_frame(&mut enc, &last_frame).is_err() {
             break;
         }
-        if push_frame(&mut enc, &frame).is_err() {
-            break;
-        }
+
         frames += 1;
         if frames % 15 == 0 {
             update_frame_count(&status, &output_path, frames);
+        }
+
+        // Pacing to keep exact 30 FPS feeding to FFmpeg
+        next_target += frame_interval;
+        let after_push = std::time::Instant::now();
+        if next_target > after_push {
+            std::thread::sleep(next_target - after_push);
+        } else if after_push.duration_since(next_target) > std::time::Duration::from_millis(500) {
+            // Als we ver achter lopen, reset timing target naar nu
+            next_target = after_push;
         }
     }
 

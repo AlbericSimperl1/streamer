@@ -1,7 +1,8 @@
 use crate::capture;
 use crate::hypr;
 use crate::types::{LogEntry, LogLevel, MonitorConfig, MonitorJson};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, SystemTime};
 
 /// Centrale applicatie-state. Bevat alle data en business logic.
@@ -20,10 +21,25 @@ pub struct App {
     pub capture_output_path: String,
     /// Receiver voor de status nadat een achtergrond-stop klaar is.
     pub stop_result_rx: Option<mpsc::Receiver<capture::CaptureStatus>>,
+
+    /// Wordt gezet door de ctrlc signal handler in main.rs.
+    /// Wanneer true, triggert de GUI-loop een graceful shutdown.
+    pub signal_flag: Option<Arc<AtomicBool>>,
+    /// Voorkomt dat shutdown meerdere keren wordt aangeroepen.
+    shutdown_done: bool,
 }
 
 impl App {
     pub fn new() -> Self {
+        Self::with_signal_flag_opt(None)
+    }
+
+    /// Constructor met een optionele signal flag (gezet door ctrlc handler).
+    pub fn with_signal_flag(flag: Arc<AtomicBool>) -> Self {
+        Self::with_signal_flag_opt(Some(flag))
+    }
+
+    fn with_signal_flag_opt(signal_flag: Option<Arc<AtomicBool>>) -> Self {
         let mut app = Self {
             config: MonitorConfig::default(),
             monitors: Vec::new(),
@@ -34,6 +50,8 @@ impl App {
             capture: None,
             capture_output_path: default_capture_path(),
             stop_result_rx: None,
+            signal_flag,
+            shutdown_done: false,
         };
         app.log(
             "Hyprland Virtual Display controller started.",
@@ -87,6 +105,13 @@ impl App {
                 self.refresh();
             }
         }
+    }
+
+    /// Checkt of een SIGINT/SIGTERM is ontvangen.
+    pub fn should_quit(&self) -> bool {
+        self.signal_flag
+            .as_ref()
+            .map_or(false, |f| f.load(Ordering::SeqCst))
     }
 
     pub fn is_capturing(&self) -> bool {
@@ -242,9 +267,19 @@ impl App {
 
     /// Cleanup bij afsluiten: capture stoppen + virtuele monitor verwijderen.
     pub fn shutdown(&mut self) {
+        if self.shutdown_done {
+            return;
+        }
+        self.shutdown_done = true;
+
         if let Some(mut session) = self.capture.take() {
             session.stop();
             println!("✓ Capture sessie gestopt bij afsluiten.");
+        }
+        // Wacht ook eventuele achtergrond stop-thread af.
+        if let Some(rx) = self.stop_result_rx.take() {
+            // Geef de stop-thread max 5 seconden om te finaliseren.
+            let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
         }
         if self.monitor_exists {
             let name = self.config.name.clone();
@@ -252,6 +287,23 @@ impl App {
                 Ok(_) => println!("✓ Monitor succesvol opgeruimd."),
                 Err(e) => eprintln!("✗ Fout bij opruimen monitor bij afsluiten: {e}"),
             }
+        }
+    }
+}
+
+/// Vangnet: als shutdown() niet is aangeroepen (bv. bij panic of onverwacht
+/// afsluiten), probeer alsnog netjes op te ruimen.
+impl Drop for App {
+    fn drop(&mut self) {
+        // capture session dropt zichzelf (CaptureSession::drop zet stop_flag
+        // en joint threads), maar we willen ook de monitor opruimen.
+        if self.capture.is_some() {
+            // CaptureSession::drop handelt het stoppen af.
+            self.capture.take();
+        }
+        if self.monitor_exists {
+            let name = self.config.name.clone();
+            let _ = hypr::remove_monitor(&name);
         }
     }
 }
@@ -277,3 +329,4 @@ fn dirs_or_tmp() -> std::path::PathBuf {
     }
     std::path::PathBuf::from("/tmp")
 }
+

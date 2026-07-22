@@ -28,6 +28,13 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_secs(1));
         }
 
+        // — check voor SIGINT/SIGTERM —
+        if self.should_quit() {
+            self.shutdown();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
         let capturing = self.is_capturing();
         let stopping = self.is_stopping();
         if capturing || stopping {

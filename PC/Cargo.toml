@@ -16,6 +16,7 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "scre
 pipewire = "0.10"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "fs"] }
 log = "0.4"
+ctrlc = "3"
 
 # releases
 [profile.release]
