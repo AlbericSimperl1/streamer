@@ -198,7 +198,10 @@ fn run_encoder(
             Ok(f) => break f,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                set_status(&status, CaptureStatus::Error("No frames received from PipeWire".into()));
+                set_status(
+                    &status,
+                    CaptureStatus::Error("No frames received from PipeWire".into()),
+                );
                 return;
             }
         }
@@ -206,7 +209,7 @@ fn run_encoder(
 
     let width = last_frame.width;
     let height = last_frame.height;
-    let fps = 30;
+    let fps = 60;
     let frame_interval = std::time::Duration::from_nanos(1_000_000_000 / fps as u64); // ~33.3ms
 
     let mut enc = match encoder::Encoder::start(width, height, fps, &output_path) {

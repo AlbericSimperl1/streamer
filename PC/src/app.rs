@@ -114,7 +114,6 @@ impl App {
         }
     }
 
-    /// Wordt elke GUI-frame aangeroepen; voert auto-refresh uit en update FPS statistieken.
     pub fn tick(&mut self) {
         if self.auto_refresh {
             if let Some(last) = self.last_refresh {
@@ -140,15 +139,17 @@ impl App {
             self.last_fps_calc_time = Some(now);
         }
 
-        let calc_due = self.last_fps_calc_time
-            .map_or(true, |t| t.elapsed().unwrap_or_default() >= Duration::from_millis(500));
+        let calc_due = self.last_fps_calc_time.map_or(true, |t| {
+            t.elapsed().unwrap_or_default() >= Duration::from_millis(500)
+        });
 
         if calc_due {
             if is_capturing {
                 if let Some(last_time) = self.last_fps_calc_time {
                     let elapsed_secs = last_time.elapsed().unwrap_or_default().as_secs_f32();
                     if elapsed_secs > 0.0 {
-                        let delta_frames = current_frames.saturating_sub(self.last_frame_count) as f32;
+                        let delta_frames =
+                            current_frames.saturating_sub(self.last_frame_count) as f32;
                         let raw_fps = delta_frames / elapsed_secs;
                         // Smooth transition
                         self.current_fps = self.current_fps * 0.4 + raw_fps * 0.6;
@@ -162,8 +163,71 @@ impl App {
 
             self.fps_history.pop_front();
             self.fps_history.push_back(self.current_fps);
+
+            while self.fps_history.len() > 20 {
+                self.fps_history.pop_front();
+            }
         }
     }
+
+    // pub fn tick(&mut self) {
+    //     if self.auto_refresh {
+    //         if let Some(last) = self.last_refresh {
+    //             if last.elapsed().unwrap_or_default() >= Duration::from_secs(2) {
+    //                 self.refresh();
+    //             }
+    //         }
+    //     }
+
+    //     // FPS statistieken berekenen en history bijhouden voor de grafiek
+    //     let now = SystemTime::now();
+    //     let (current_frames, is_capturing) = match self.capture.as_ref().map(|c| c.status()) {
+    //         Some(capture::CaptureStatus::Capturing { frames, .. }) => (frames, true),
+    //         _ => (0, false),
+    //     };
+
+    //     if !is_capturing {
+    //         self.stream_start_time = None;
+    //         self.current_fps = 0.0;
+    //     } else if self.stream_start_time.is_none() {
+    //         self.stream_start_time = Some(now);
+    //         self.last_frame_count = current_frames;
+    //         self.last_fps_calc_time = Some(now);
+    //     }
+
+    //     // Update 10x per seconde (100ms) voor een vloeiendere grafiek
+    //     let calc_due = self.last_fps_calc_time.map_or(true, |t| {
+    //         t.elapsed().unwrap_or_default() >= Duration::from_millis(100)
+    //     });
+
+    //     if calc_due {
+    //         if is_capturing {
+    //             if let Some(last_time) = self.last_fps_calc_time {
+    //                 let elapsed_secs = last_time.elapsed().unwrap_or_default().as_secs_f32();
+    //                 if elapsed_secs > 0.0 {
+    //                     let delta_frames =
+    //                         current_frames.saturating_sub(self.last_frame_count) as f32;
+    //                     let raw_fps = delta_frames / elapsed_secs;
+    //                     // Iets sterkere smoothing voor kortere interval
+    //                     self.current_fps = self.current_fps * 0.6 + raw_fps * 0.4;
+    //                 }
+    //             }
+    //             self.last_frame_count = current_frames;
+    //             self.last_fps_calc_time = Some(now);
+    //         } else {
+    //             self.current_fps = 0.0;
+    //         }
+
+    //         // Voeg nieuw punt toe
+    //         self.fps_history.push_back(self.current_fps);
+
+    //         // --- BEPERK TOT 5 SECONDEN ---
+    //         // 10 updates per seconde * 5 seconden = 50 punten
+    //         while self.fps_history.len() > 50 {
+    //             self.fps_history.pop_front();
+    //         }
+    //     }
+    // }
 
     /// Checkt of een SIGINT/SIGTERM is ontvangen.
     pub fn should_quit(&self) -> bool {
@@ -387,4 +451,3 @@ fn dirs_or_tmp() -> std::path::PathBuf {
     }
     std::path::PathBuf::from("/tmp")
 }
-

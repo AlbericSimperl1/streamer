@@ -1,23 +1,22 @@
 use crate::app::App;
-use crate::types::LogLevel;
 use eframe::egui;
 use std::time::Duration;
 
 // ─── Music App (Omatunes) Kleurenpalet ──────────────────────────
-const BG_MAIN: egui::Color32 = egui::Color32::from_rgb(20, 20, 28);       // Donkere slate achtergrond
-const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(28, 28, 38);      // Paneel achtergrond
-const BG_INNER: egui::Color32 = egui::Color32::from_rgb(15, 15, 22);      // Terminal & Canvas achtergrond
-const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgb(42, 42, 58);  // Subtiele randen
+const BG_MAIN: egui::Color32 = egui::Color32::from_rgb(20, 20, 28); // Donkere slate achtergrond
+const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(28, 28, 38); // Paneel achtergrond
+const BG_INNER: egui::Color32 = egui::Color32::from_rgb(15, 15, 22); // Terminal & Canvas achtergrond
+const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgb(42, 42, 58); // Subtiele randen
 
 // Accenten uit de muziek-app screenshot (Neon Lime + Soft Indigo/Blue)
-const ACCENT_LIME: egui::Color32 = egui::Color32::from_rgb(132, 204, 22);  // Neon Lime Groen (#84cc16)
+const ACCENT_LIME: egui::Color32 = egui::Color32::from_rgb(132, 204, 22); // Neon Lime Groen (#84cc16)
 const ACCENT_HOVER: egui::Color32 = egui::Color32::from_rgb(163, 230, 53); // Lichter Neon Groen
-const ACCENT_BLUE: egui::Color32 = egui::Color32::from_rgb(99, 102, 241);  // Indigo Blauw (#6366f1)
-const DANGER_RED: egui::Color32 = egui::Color32::from_rgb(239, 68, 68);   // Soft Rood (#ef4444)
+const ACCENT_BLUE: egui::Color32 = egui::Color32::from_rgb(99, 102, 241); // Indigo Blauw (#6366f1)
+const DANGER_RED: egui::Color32 = egui::Color32::from_rgb(239, 68, 68); // Soft Rood (#ef4444)
 const DANGER_HOVER: egui::Color32 = egui::Color32::from_rgb(248, 113, 113);
 
 const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(241, 245, 249); // Heldere tekst
-const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(148, 163, 184);   // Grijze subtekst
+const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(148, 163, 184); // Grijze subtekst
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -70,15 +69,8 @@ impl eframe::App for App {
                 // 3. Actieknoppen: [ Create ] [ Remove ] [ Start ] [ Stop ]
                 self.render_action_bar(ui, stopping);
 
-                // 4. Onder: Log (links) + FPS Graph (rechts)
-                ui.columns(2, |cols| {
-                    cols[0].vertical(|ui| {
-                        self.render_log_card(ui);
-                    });
-                    cols[1].vertical(|ui| {
-                        self.render_graph_card(ui);
-                    });
-                });
+                // 4. Onder: FPS & stats
+                self.render_graph_card(ui);
             });
     }
 
@@ -96,8 +88,9 @@ impl App {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 // Neon groen muziek-icon geïnspireerd badge
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 6.0, ACCENT_LIME);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 2.0, ACCENT_LIME);
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -171,7 +164,11 @@ impl App {
                 .spacing([12.0, 10.0])
                 .show(ui, |ui| {
                     // identifier :
-                    ui.label(egui::RichText::new("identifier :").color(TEXT_MUTED).monospace());
+                    ui.label(
+                        egui::RichText::new("identifier :")
+                            .color(TEXT_MUTED)
+                            .monospace(),
+                    );
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!self.monitor_exists, |ui| {
                             ui.add(
@@ -180,7 +177,12 @@ impl App {
                             );
                         });
                         if self.monitor_exists {
-                            ui.label(egui::RichText::new("✓ active").color(ACCENT_LIME).monospace().small());
+                            ui.label(
+                                egui::RichText::new("✓ active")
+                                    .color(ACCENT_LIME)
+                                    .monospace()
+                                    .small(),
+                            );
                         }
                     });
                     ui.end_row();
@@ -203,7 +205,11 @@ impl App {
                     ui.end_row();
 
                     // frame rate :
-                    ui.label(egui::RichText::new("frame rate :").color(TEXT_MUTED).monospace());
+                    ui.label(
+                        egui::RichText::new("frame rate :")
+                            .color(TEXT_MUTED)
+                            .monospace(),
+                    );
                     ui.add(
                         egui::DragValue::new(&mut self.config.fps)
                             .range(1..=240)
@@ -286,8 +292,8 @@ impl App {
                 }
 
                 // Achtergrond grid van het canvas
-                painter.rect_filled(canvas_rect, 6.0, BG_INNER);
-                painter.rect_stroke(canvas_rect, 6.0, egui::Stroke::new(1.0, BORDER_COLOR));
+                painter.rect_filled(canvas_rect, 2.0, BG_INNER);
+                painter.rect_stroke(canvas_rect, 2.0, egui::Stroke::new(1.0, BORDER_COLOR));
 
                 let center_x = canvas_rect.center().x;
                 let center_y = canvas_rect.center().y;
@@ -297,8 +303,8 @@ impl App {
                     egui::pos2(center_x + 35.0, center_y + 10.0),
                     egui::vec2(100.0, 60.0),
                 );
-                painter.rect_filled(main_mon_rect, 4.0, egui::Color32::from_rgb(35, 42, 60));
-                painter.rect_stroke(main_mon_rect, 4.0, egui::Stroke::new(1.5, ACCENT_BLUE));
+                painter.rect_filled(main_mon_rect, 2.0, egui::Color32::from_rgb(35, 42, 60));
+                painter.rect_stroke(main_mon_rect, 2.0, egui::Stroke::new(1.5, ACCENT_BLUE));
                 painter.text(
                     main_mon_rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -312,14 +318,23 @@ impl App {
                 let virt_y_offset = (self.config.y as f32 / 20.0).clamp(-45.0, 45.0);
 
                 let virt_mon_rect = egui::Rect::from_center_size(
-                    egui::pos2(center_x - 40.0 + virt_x_offset, center_y - 15.0 + virt_y_offset),
+                    egui::pos2(
+                        center_x - 40.0 + virt_x_offset,
+                        center_y - 15.0 + virt_y_offset,
+                    ),
                     egui::vec2(80.0, 52.0),
                 );
 
                 let (fill_col, stroke_col) = if self.monitor_exists {
-                    (egui::Color32::from_rgba_premultiplied(132, 204, 22, 50), ACCENT_LIME)
+                    (
+                        egui::Color32::from_rgba_premultiplied(132, 204, 22, 50),
+                        ACCENT_LIME,
+                    )
                 } else {
-                    (egui::Color32::from_rgba_premultiplied(148, 163, 184, 25), TEXT_MUTED)
+                    (
+                        egui::Color32::from_rgba_premultiplied(148, 163, 184, 25),
+                        TEXT_MUTED,
+                    )
                 };
 
                 let is_grabbed = response.dragged();
@@ -329,14 +344,21 @@ impl App {
                     egui::Stroke::new(1.5, stroke_col)
                 };
 
-                painter.rect_filled(virt_mon_rect, 4.0, fill_col);
-                painter.rect_stroke(virt_mon_rect, 4.0, actual_stroke);
+                painter.rect_filled(virt_mon_rect, 2.0, fill_col);
+                painter.rect_stroke(virt_mon_rect, 2.0, actual_stroke);
                 painter.text(
                     virt_mon_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    &format!("{}\n{}x{}", self.config.name, self.config.width, self.config.height),
+                    &format!(
+                        "{}\n{}x{}",
+                        self.config.name, self.config.width, self.config.height
+                    ),
                     egui::FontId::monospace(9.5),
-                    if self.monitor_exists { ACCENT_LIME } else { TEXT_MUTED },
+                    if self.monitor_exists {
+                        ACCENT_LIME
+                    } else {
+                        TEXT_MUTED
+                    },
                 );
 
                 // Instruction label at bottom of canvas
@@ -352,7 +374,12 @@ impl App {
             // Coordinate Fine Tuning Drag Values
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("position :").color(TEXT_MUTED).monospace().small());
+                ui.label(
+                    egui::RichText::new("position :")
+                        .color(TEXT_MUTED)
+                        .monospace()
+                        .small(),
+                );
                 ui.add(egui::DragValue::new(&mut self.config.x).prefix("x: "));
                 ui.add(egui::DragValue::new(&mut self.config.y).prefix("y: "));
             });
@@ -373,7 +400,14 @@ impl App {
                 // Button 1: create
                 cols[0].scope(|ui| {
                     set_button_style(ui, ACCENT_LIME, ACCENT_HOVER, BG_MAIN);
-                    if ui.add_enabled(can_create, egui::Button::new("create").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                    if ui
+                        .add_enabled(
+                            can_create,
+                            egui::Button::new("create")
+                                .min_size(egui::vec2(ui.available_width(), 32.0)),
+                        )
+                        .clicked()
+                    {
                         self.do_create();
                     }
                 });
@@ -381,15 +415,34 @@ impl App {
                 // Button 2: remove
                 cols[1].scope(|ui| {
                     set_button_style(ui, DANGER_RED, DANGER_HOVER, TEXT_PRIMARY);
-                    if ui.add_enabled(can_remove, egui::Button::new("remove").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                    if ui
+                        .add_enabled(
+                            can_remove,
+                            egui::Button::new("remove")
+                                .min_size(egui::vec2(ui.available_width(), 32.0)),
+                        )
+                        .clicked()
+                    {
                         self.do_remove();
                     }
                 });
 
                 // Button 3: start
                 cols[2].scope(|ui| {
-                    set_button_style(ui, ACCENT_BLUE, egui::Color32::from_rgb(129, 140, 248), TEXT_PRIMARY);
-                    if ui.add_enabled(can_start, egui::Button::new("start").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                    set_button_style(
+                        ui,
+                        ACCENT_BLUE,
+                        egui::Color32::from_rgb(129, 140, 248),
+                        TEXT_PRIMARY,
+                    );
+                    if ui
+                        .add_enabled(
+                            can_start,
+                            egui::Button::new("start")
+                                .min_size(egui::vec2(ui.available_width(), 32.0)),
+                        )
+                        .clicked()
+                    {
                         self.do_start_capture();
                     }
                 });
@@ -397,58 +450,17 @@ impl App {
                 // Button 4: stop
                 cols[3].scope(|ui| {
                     set_button_style(ui, DANGER_RED, DANGER_HOVER, TEXT_PRIMARY);
-                    if ui.add_enabled(can_stop, egui::Button::new("stop").min_size(egui::vec2(ui.available_width(), 32.0))).clicked() {
+                    if ui
+                        .add_enabled(
+                            can_stop,
+                            egui::Button::new("stop")
+                                .min_size(egui::vec2(ui.available_width(), 32.0)),
+                        )
+                        .clicked()
+                    {
                         self.do_stop_capture();
                     }
                 });
-            });
-        });
-    }
-
-    /// Bottom-Left Panel: `log`
-    fn render_log_card(&self, ui: &mut egui::Ui) {
-        panel_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.set_min_height(200.0);
-
-            ui.label(
-                egui::RichText::new("log")
-                    .color(ACCENT_LIME)
-                    .size(16.0)
-                    .monospace()
-                    .strong(),
-            );
-            ui.add_space(8.0);
-
-            inner_frame().show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .max_height(140.0)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 3.0;
-                        for entry in &self.log_entries {
-                            let color = match entry.level {
-                                LogLevel::Info => TEXT_MUTED,
-                                LogLevel::Success => ACCENT_LIME,
-                                LogLevel::Warning => egui::Color32::from_rgb(250, 204, 21),
-                                LogLevel::Error => DANGER_RED,
-                            };
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(&entry.time)
-                                        .color(egui::Color32::from_rgb(90, 90, 110))
-                                        .monospace()
-                                        .size(10.0),
-                                );
-                                ui.label(
-                                    egui::RichText::new(&entry.message)
-                                        .color(color)
-                                        .monospace()
-                                        .size(11.0),
-                                );
-                            });
-                        }
-                    });
             });
         });
     }
@@ -487,13 +499,16 @@ impl App {
                 let rect = response.rect;
 
                 // Graph Background
-                painter.rect_filled(rect, 4.0, BG_INNER);
-                painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, BORDER_COLOR));
+                painter.rect_filled(rect, 2.0, BG_INNER);
+                painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, BORDER_COLOR));
 
                 // 60 FPS reference target line
                 let target_y = rect.max.y - (60.0 / 75.0) * rect.height();
                 painter.line_segment(
-                    [egui::pos2(rect.min.x, target_y), egui::pos2(rect.max.x, target_y)],
+                    [
+                        egui::pos2(rect.min.x, target_y),
+                        egui::pos2(rect.max.x, target_y),
+                    ],
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 70)),
                 );
 
@@ -510,28 +525,18 @@ impl App {
                         points.push(egui::pos2(x, y));
                     }
 
-                    // Draw area fill under graph
-                    let mut fill_points = points.clone();
-                    fill_points.push(egui::pos2(rect.max.x, rect.max.y));
-                    fill_points.push(egui::pos2(rect.min.x, rect.max.y));
-
-                    painter.add(egui::Shape::convex_polygon(
-                        fill_points,
-                        egui::Color32::from_rgba_premultiplied(132, 204, 22, 25),
-                        egui::Stroke::NONE,
+                    // ─── Alleen de trace lijn (geen vulkleur meer) ───
+                    painter.add(egui::Shape::line(
+                        points,
+                        egui::Stroke::new(1.5, ACCENT_LIME), // Strakke, iets dunnere lijn
                     ));
-
-                    // Draw green line curve
-                    for w in points.windows(2) {
-                        painter.line_segment([w[0], w[1]], egui::Stroke::new(2.0, ACCENT_LIME));
-                    }
                 }
 
                 // X-axis time indicators (t-10s -> t)
                 painter.text(
                     egui::pos2(rect.min.x + 6.0, rect.max.y - 12.0),
                     egui::Align2::LEFT_BOTTOM,
-                    "t - 10",
+                    "t - 5",
                     egui::FontId::monospace(9.0),
                     TEXT_MUTED,
                 );
@@ -551,11 +556,26 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 16.0;
 
                 // Packet loss
-                ui.label(egui::RichText::new("packet loss :").color(TEXT_MUTED).monospace().small());
-                ui.label(egui::RichText::new("0.0%").color(ACCENT_LIME).monospace().small());
+                ui.label(
+                    egui::RichText::new("packet loss :")
+                        .color(TEXT_MUTED)
+                        .monospace()
+                        .small(),
+                );
+                ui.label(
+                    egui::RichText::new("0.0%")
+                        .color(ACCENT_LIME)
+                        .monospace()
+                        .small(),
+                );
 
                 // Tijd (elapsed stream duration)
-                ui.label(egui::RichText::new("tijd :").color(TEXT_MUTED).monospace().small());
+                ui.label(
+                    egui::RichText::new("tijd :")
+                        .color(TEXT_MUTED)
+                        .monospace()
+                        .small(),
+                );
                 let elapsed_str = match self.stream_start_time {
                     Some(start) => {
                         let secs = start.elapsed().unwrap_or_default().as_secs();
@@ -563,7 +583,12 @@ impl App {
                     }
                     None => "00:00".to_string(),
                 };
-                ui.label(egui::RichText::new(elapsed_str).color(TEXT_PRIMARY).monospace().small());
+                ui.label(
+                    egui::RichText::new(elapsed_str)
+                        .color(TEXT_PRIMARY)
+                        .monospace()
+                        .small(),
+                );
             });
         });
     }
@@ -577,11 +602,14 @@ fn configure_style(ctx: &egui::Context) {
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
 
-    style.visuals.window_rounding = egui::Rounding::same(8.0);
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(6.0);
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(6.0);
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(6.0);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(6.0);
+    // ─── Scherpere randen (Rounding) ───
+    // let sharp_rounding = egui::Rounding::same(2.0); // Strakke, moderne hoeken
+    // style.visuals.window_rounding = sharp_rounding;
+    // style.visuals.widgets.noninteractive.rounding = sharp_rounding;
+    // style.visuals.widgets.inactive.rounding = sharp_rounding;
+    // style.visuals.widgets.hovered.rounding = sharp_rounding;
+    // style.visuals.widgets.active.rounding = sharp_rounding;
+    // style.visuals.widgets.open.rounding = sharp_rounding;
 
     style.visuals.dark_mode = true;
     style.visuals.code_bg_color = BG_INNER;
@@ -601,7 +629,7 @@ fn configure_style(ctx: &egui::Context) {
 fn panel_frame() -> egui::Frame {
     egui::Frame {
         fill: BG_PANEL,
-        rounding: egui::Rounding::same(10.0),
+        // rounding: egui::Rounding::same(3.0), // Iets minder scherp voor de hoofdpanelen
         inner_margin: egui::Margin::same(14.0),
         stroke: egui::Stroke::new(1.0, BORDER_COLOR),
         ..Default::default()
@@ -611,7 +639,7 @@ fn panel_frame() -> egui::Frame {
 fn inner_frame() -> egui::Frame {
     egui::Frame {
         fill: BG_INNER,
-        rounding: egui::Rounding::same(6.0),
+        // rounding: egui::Rounding::same(0.0), // Strakke binnenkaders
         inner_margin: egui::Margin::same(10.0),
         stroke: egui::Stroke::new(1.0, BORDER_COLOR),
         ..Default::default()
@@ -628,7 +656,12 @@ fn set_button_style(ui: &mut egui::Ui, bg: egui::Color32, hover: egui::Color32, 
 }
 
 fn ghost_button(text: impl Into<String>, color: egui::Color32) -> impl egui::Widget {
-    egui::Button::new(egui::RichText::new(text.into()).color(color).monospace().small())
-        .fill(egui::Color32::TRANSPARENT)
-        .stroke(egui::Stroke::NONE)
+    egui::Button::new(
+        egui::RichText::new(text.into())
+            .color(color)
+            .monospace()
+            .small(),
+    )
+    .fill(egui::Color32::TRANSPARENT)
+    .stroke(egui::Stroke::NONE)
 }
