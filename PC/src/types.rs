@@ -33,8 +33,8 @@ impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
             name: "virtual".into(),
-            width: 1200, // ipad 4/3
-            height: 900,
+            width: 1440, // ipad 4/3
+            height: 1080,
             fps: 60,
             x: 0,
             y: 0,
@@ -47,6 +47,7 @@ impl MonitorConfig {
     /// Formatteert als `name,WxH@fps,XxY,scale`.
     pub fn to_keyword(&self) -> String {
         format!(
+            // "hyprctl keyword monitor \"{},{}x{}@{},{}x{},{}\"",
             "{},{}x{}@{},{}x{},{}",
             self.name, self.width, self.height, self.fps, self.x, self.y, self.scale
         )

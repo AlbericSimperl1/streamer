@@ -243,7 +243,8 @@ impl App {
     fn render_pos_card(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(200.0);
+            // ui.set_min_height(200.0);
+            // ui.set_height(ui.available_height());
 
             ui.horizontal(|ui| {
                 ui.label(
@@ -264,25 +265,88 @@ impl App {
             });
             ui.add_space(4.0);
 
-            // Interactive canvas for dragging monitor layout
             inner_frame().show(ui, |ui| {
                 let (response, painter) = ui.allocate_painter(
-                    egui::vec2(ui.available_width(), 118.0),
+                    egui::vec2(ui.available_width(), 180.0), // Iets groter gemaakt voor betere verhoudingen
                     egui::Sense::click_and_drag(),
                 );
+
                 let canvas_rect = response.rect;
 
-                // Handle mouse drag to update position
+                // --- nwg-displays logica ---
+
+                let scale = 0.1; // 1 screen pixel = 0.1 canvas pixels (schaal)
+
+                let snap_dist = 50.0; // Afstand in screen-pixels waarop hij magnetisch vastklikt
+
+                // Hoofdmonitor (we gaan uit van een 1920x1080 scherm op 0,0)
+
+                let main_w = 1920.0;
+
+                let main_h = 1080.0;
+
+                let main_x = 0.0;
+
+                let main_y = 0.0;
+
+                // Virtuele monitor eigenschappen uit de config
+
+                let virt_w = self.config.width as f32;
+
+                let virt_h = self.config.height as f32;
+
+                // --- Sleep & Snap Logica ---
+
                 if response.dragged() {
                     let delta = response.drag_delta();
-                    // 1 canvas pixel = 15 screen coordinate units
-                    let delta_x = (delta.x * 15.0) as i32;
-                    let delta_y = (delta.y * 15.0) as i32;
-                    self.config.x = (self.config.x + delta_x).clamp(-10000, 10000);
-                    self.config.y = (self.config.y + delta_y).clamp(-10000, 10000);
+
+                    // Reken canvas sleepbeweging om naar scherm-pixels
+
+                    let dx = (delta.x / scale).round() as i32;
+
+                    let dy = (delta.y / scale).round() as i32;
+
+                    self.config.x += dx;
+
+                    self.config.y += dy;
+
+                    // Randen berekenen voor snapping
+
+                    let v_left = self.config.x as f32;
+
+                    let v_right = self.config.x as f32 + virt_w;
+
+                    let v_top = self.config.y as f32;
+
+                    let v_bottom = self.config.y as f32 + virt_h;
+
+                    let m_right = main_x + main_w;
+
+                    let m_left = main_x;
+
+                    let m_bottom = main_y + main_h;
+
+                    let m_top = main_y;
+
+                    // Horizontaal snappen (X-as)
+
+                    if (v_left - m_right).abs() < snap_dist {
+                        self.config.x = m_right as i32;
+                    } else if (v_right - m_left).abs() < snap_dist {
+                        self.config.x = (m_left - virt_w) as i32;
+                    }
+
+                    // Verticaal snappen (Y-as)
+
+                    if (v_top - m_bottom).abs() < snap_dist {
+                        self.config.y = m_bottom as i32;
+                    } else if (v_bottom - m_top).abs() < snap_dist {
+                        self.config.y = (m_top - virt_h) as i32;
+                    }
                 }
 
-                // Mouse cursor hint
+                // Cursor hints
+
                 if response.hovered() {
                     ui.ctx().set_cursor_icon(if response.dragged() {
                         egui::CursorIcon::Grabbing
@@ -291,38 +355,56 @@ impl App {
                     });
                 }
 
-                // Achtergrond grid van het canvas
+                // --- Teken Logica ---
+
                 painter.rect_filled(canvas_rect, 2.0, BG_INNER);
+
                 painter.rect_stroke(canvas_rect, 2.0, egui::Stroke::new(1.0, BORDER_COLOR));
 
                 let center_x = canvas_rect.center().x;
+
                 let center_y = canvas_rect.center().y;
 
-                // 1. Draw main physical monitor
-                let main_mon_rect = egui::Rect::from_center_size(
-                    egui::pos2(center_x + 35.0, center_y + 10.0),
-                    egui::vec2(100.0, 60.0),
+                // Bepaal het nulpunt op het canvas (zodat het hoofd-scherm min of meer in het midden ligt)
+
+                let origin_x = center_x - (main_w / 2.0) * scale;
+
+                let origin_y = center_y - (main_h / 2.0) * scale;
+
+                // Hulpfunctie: Vertaal scherm-coördinaten naar canvas-punten
+
+                let to_canvas = |sx: f32, sy: f32| -> egui::Pos2 {
+                    egui::pos2(origin_x + sx * scale, origin_y + sy * scale)
+                };
+
+                // 1. Teken hoofdmonitor (vanaf zijn linkerbovenhoek)
+
+                let main_top_left = to_canvas(main_x, main_y);
+
+                let main_rect = egui::Rect::from_min_size(
+                    main_top_left,
+                    egui::vec2(main_w * scale, main_h * scale),
                 );
-                painter.rect_filled(main_mon_rect, 2.0, egui::Color32::from_rgb(35, 42, 60));
-                painter.rect_stroke(main_mon_rect, 2.0, egui::Stroke::new(1.5, ACCENT_BLUE));
+
+                painter.rect_filled(main_rect, 2.0, egui::Color32::from_rgb(35, 42, 60));
+
+                painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(1.5, ACCENT_BLUE));
+
                 painter.text(
-                    main_mon_rect.center(),
+                    main_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "main\n(DP-1)",
                     egui::FontId::monospace(10.0),
                     TEXT_PRIMARY,
                 );
 
-                // 2. Draw Virtual Monitor (pos) - position based on config.x, config.y
-                let virt_x_offset = (self.config.x as f32 / 20.0).clamp(-85.0, 85.0);
-                let virt_y_offset = (self.config.y as f32 / 20.0).clamp(-45.0, 45.0);
+                // 2. Teken virtuele monitor (vanaf zijn linkerbovenhoek)
 
-                let virt_mon_rect = egui::Rect::from_center_size(
-                    egui::pos2(
-                        center_x - 40.0 + virt_x_offset,
-                        center_y - 15.0 + virt_y_offset,
-                    ),
-                    egui::vec2(80.0, 52.0),
+                let virt_top_left = to_canvas(self.config.x as f32, self.config.y as f32);
+
+                let virt_rect = egui::Rect::from_min_size(
+                    virt_top_left,
+                    egui::vec2(virt_w * scale, virt_h * scale),
                 );
 
                 let (fill_col, stroke_col) = if self.monitor_exists {
@@ -338,16 +420,19 @@ impl App {
                 };
 
                 let is_grabbed = response.dragged();
+
                 let actual_stroke = if is_grabbed {
                     egui::Stroke::new(2.5, ACCENT_HOVER)
                 } else {
                     egui::Stroke::new(1.5, stroke_col)
                 };
 
-                painter.rect_filled(virt_mon_rect, 2.0, fill_col);
-                painter.rect_stroke(virt_mon_rect, 2.0, actual_stroke);
+                painter.rect_filled(virt_rect, 2.0, fill_col);
+
+                painter.rect_stroke(virt_rect, 2.0, actual_stroke);
+
                 painter.text(
-                    virt_mon_rect.center(),
+                    virt_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     &format!(
                         "{}\n{}x{}",
@@ -361,27 +446,15 @@ impl App {
                     },
                 );
 
-                // Instruction label at bottom of canvas
+                // Instructie label
+
                 painter.text(
                     egui::pos2(canvas_rect.min.x + 6.0, canvas_rect.max.y - 6.0),
                     egui::Align2::LEFT_BOTTOM,
-                    "↔ drag box to position",
+                    "↔ drag to position (snaps to edges)",
                     egui::FontId::monospace(9.0),
                     TEXT_MUTED,
                 );
-            });
-
-            // Coordinate Fine Tuning Drag Values
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("position :")
-                        .color(TEXT_MUTED)
-                        .monospace()
-                        .small(),
-                );
-                ui.add(egui::DragValue::new(&mut self.config.x).prefix("x: "));
-                ui.add(egui::DragValue::new(&mut self.config.y).prefix("y: "));
             });
         });
     }
