@@ -277,7 +277,7 @@ impl App {
 
                 // --- nwg-displays logica ---
 
-                let scale = 0.1; // 1 screen pixel = 0.1 canvas pixels (schaal)
+                let scale = 0.05; // 1 screen pixel = 0.1 canvas pixels (schaal)
 
                 let snap_dist = 50.0; // Afstand in screen-pixels waarop hij magnetisch vastklikt
 
@@ -402,7 +402,8 @@ impl App {
 
                 // 2. Teken virtuele monitor (vanaf zijn linkerbovenhoek)
 
-                let virt_top_left = to_canvas(self.config.x as f32, self.config.y as f32);
+                let virt_top_left =
+                    to_canvas((self.config.x as f32 - 1440.0), self.config.y as f32);
 
                 let virt_rect = egui::Rect::from_min_size(
                     virt_top_left,
