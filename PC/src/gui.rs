@@ -148,10 +148,10 @@ impl App {
     fn render_config_card(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(200.0);
+            ui.set_min_height(230.0);
 
             ui.label(
-                egui::RichText::new("config")
+                egui::RichText::new("configuration")
                     .color(ACCENT_LIME)
                     .size(16.0)
                     .monospace()
@@ -227,7 +227,7 @@ impl App {
                     ui.end_row();
                 });
 
-            ui.add_space(10.0);
+            ui.add_space(25.0);
             inner_frame().show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.monospace(
@@ -243,12 +243,11 @@ impl App {
     fn render_pos_card(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            // ui.set_min_height(200.0);
-            // ui.set_height(ui.available_height());
+            ui.set_min_height(230.0);
 
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("pos")
+                    egui::RichText::new("position")
                         .color(ACCENT_LIME)
                         .size(16.0)
                         .monospace()
@@ -256,10 +255,13 @@ impl App {
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new(format!("x: {}  y: {}", self.config.x, self.config.y))
-                            .color(ACCENT_LIME)
-                            .monospace()
-                            .small(),
+                        (egui::RichText::new(format!(
+                            "x: {}  y: {}",
+                            self.config.x, self.config.y
+                        ))
+                        .color(ACCENT_LIME))
+                        .monospace()
+                        .size(16.0),
                     );
                 });
             });
@@ -473,15 +475,15 @@ impl App {
                 // Button 1: create
                 cols[0].scope(|ui| {
                     set_button_style(ui, ACCENT_LIME, ACCENT_HOVER, BG_MAIN);
-                    if ui
-                        .add_enabled(
-                            can_create,
-                            egui::Button::new("create")
-                                .min_size(egui::vec2(ui.available_width(), 32.0)),
-                        )
-                        .clicked()
-                    {
-                        self.do_create();
+
+                    let button_text = if self.monitor_exists {
+                        "Update Config"
+                    } else {
+                        "Create Monitor"
+                    };
+
+                    if ui.button(button_text).clicked() {
+                        self.apply_config();
                     }
                 });
 

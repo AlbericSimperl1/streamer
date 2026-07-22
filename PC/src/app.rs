@@ -185,33 +185,53 @@ impl App {
         self.stop_result_rx.is_some()
     }
 
-    pub fn do_create(&mut self) {
-        let name = self.config.name.clone();
-        let kw = self.config.to_keyword();
+    // pub fn do_create(&mut self) {
+    //     let name = self.config.name.clone();
+    //     let kw = self.config.to_keyword();
 
-        self.log(
-            format!("▶ Creating virtual monitor '{name}'..."),
-            LogLevel::Info,
-        );
-        self.log(format!("  $ hyprctl keyword monitor {kw}"), LogLevel::Info);
-        self.log(
-            format!("  $ hyprctl output create headless {name}"),
-            LogLevel::Info,
-        );
+    //     self.log(
+    //         format!("▶ Creating virtual monitor '{name}'..."),
+    //         LogLevel::Info,
+    //     );
+    //     self.log(format!("  $ hyprctl keyword monitor {kw}"), LogLevel::Info);
+    //     self.log(
+    //         format!("  $ hyprctl output create headless {name}"),
+    //         LogLevel::Info,
+    //     );
 
-        match hypr::create_monitor(&self.config) {
-            Ok(out) => {
-                self.log(
-                    format!("✓ Monitor '{name}' created. {}", out.trim()),
-                    LogLevel::Success,
-                );
-                self.refresh();
+    //     match hypr::create_monitor(&self.config) {
+    //         Ok(out) => {
+    //             self.log(
+    //                 format!("✓ Monitor '{name}' created. {}", out.trim()),
+    //                 LogLevel::Success,
+    //             );
+    //             self.refresh();
+    //         }
+    //         Err(e) => {
+    //             self.log(format!("⚠ {e}"), LogLevel::Warning);
+    //             self.refresh();
+    //         }
+    //     }
+    // }
+
+    pub fn apply_config(&mut self) {
+        // 1. Maak de virtuele output ALLEEN aan als hij nog niet bestaat
+        if !self.monitor_exists {
+            if let Err(e) = hypr::create_headless_output(&self.config.name) {
+                eprintln!("Fout bij aanmaken headless monitor: {e}");
+                return;
             }
-            Err(e) => {
-                self.log(format!("⚠ {e}"), LogLevel::Warning);
-                self.refresh();
-            }
+            self.monitor_exists = true;
         }
+
+        // 2. Pas de (nieuwe) configuratie toe.
+        // Dit werkt direct op actieve monitoren in Hyprland!
+        if let Err(e) = hypr::apply_monitor_keyword(&self.config) {
+            eprintln!("Fout bij updaten monitor configuratie: {e}");
+        }
+
+        // 3. Ververs de applicatiestate
+        self.refresh();
     }
 
     pub fn do_remove(&mut self) {
