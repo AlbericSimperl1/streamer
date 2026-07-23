@@ -23,9 +23,9 @@ const T0: egui::Color32 = egui::Color32::from_rgb(255, 255, 255); // "titels"
 const T1: egui::Color32 = egui::Color32::from_rgb(255, 246, 226); // primary
 const T2: egui::Color32 = egui::Color32::from_rgb(146, 138, 132); // inactive
 
-/// accent #296b66
-const A1: egui::Color32 = egui::Color32::from_rgb(0, 123, 80); // primary
-const A2: egui::Color32 = egui::Color32::from_rgb(41, 107, 107); // secondary
+/// accent rgb(20, 170, 118)
+const A1: egui::Color32 = egui::Color32::from_rgb(20, 170, 118); // primary
+const A2: egui::Color32 = egui::Color32::from_rgb(28, 57, 47); // secondary
 
 impl App {
     // Bestaande new() blijft zoals hij was:
@@ -476,10 +476,11 @@ impl App {
                 );
 
                 let (fill_col, stroke_col) = if self.monitor_exists {
-                    (egui::Color32::from_rgb(142, 122, 31), A1)
+                    (egui::Color32::from_rgb(22, 81, 60), A1)
                 } else {
                     (A2, A1)
                 };
+                // rgb(22, 81, 60)
 
                 let is_grabbed = response.dragged();
                 let actual_stroke = if is_grabbed {
