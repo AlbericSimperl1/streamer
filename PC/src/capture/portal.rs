@@ -2,7 +2,7 @@ use ashpd::desktop::{
     screencast::{
         CursorMode, Screencast, SelectSourcesOptions, SourceType, Stream as ScreencastStream,
     },
-    PersistMode,
+    PersistMode, Session,
 };
 use std::os::fd::OwnedFd;
 
@@ -10,6 +10,7 @@ use std::os::fd::OwnedFd;
 pub struct PortalHandle {
     pub fd: OwnedFd,
     pub node_id: u32,
+    pub session: Session<Screencast>, // <-- Vervangen door Session<Screencast>
 }
 
 /// Run the screencast portal flow. Triggers a system popup asking the user to
@@ -57,5 +58,9 @@ pub async fn open_screencast() -> Result<PortalHandle, String> {
         .await
         .map_err(|e| format!("open_pipe_wire_remote failed: {e}"))?;
 
-    Ok(PortalHandle { fd, node_id })
+    Ok(PortalHandle {
+        fd,
+        node_id,
+        session,
+    })
 }

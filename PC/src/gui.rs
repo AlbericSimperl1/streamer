@@ -23,7 +23,7 @@ const T0: egui::Color32 = egui::Color32::from_rgb(255, 255, 255); // "titels"
 const T1: egui::Color32 = egui::Color32::from_rgb(255, 246, 226); // primary
 const T2: egui::Color32 = egui::Color32::from_rgb(146, 138, 132); // inactive
 
-/// accent rgb(20, 170, 118)
+/// accent
 const A1: egui::Color32 = egui::Color32::from_rgb(20, 170, 118); // primary
 const A2: egui::Color32 = egui::Color32::from_rgb(28, 57, 47); // secondary
 
@@ -222,15 +222,23 @@ impl App {
     }
 
     /// Actieknoppen (Create/Update, Remove, Start, Stop)
+    // fn render_controls(&mut self, ui: &mut egui::Ui, stopping: bool) {
+    //     // Bugfix: can_apply checkt nu alleen of de naam niet leeg is en we niet aan het capturen zijn.
+    //     let can_apply = !self.config.name.is_empty() && !self.is_capturing() && !stopping;
+    //     let can_remove = self.monitor_exists && !self.is_capturing() && !stopping;
+    //     let can_start = self.monitor_exists && !self.is_capturing() && !stopping;
+    //     let can_stop = self.is_capturing() && !stopping;
+
+    //     let btn_width = (272.0 - 4.0) / 2.0;
+
     fn render_controls(&mut self, ui: &mut egui::Ui, stopping: bool) {
-        // Bugfix: can_apply checkt nu alleen of de naam niet leeg is en we niet aan het capturen zijn.
-        let can_apply = !self.config.name.is_empty() && !self.is_capturing() && !stopping;
+        // can_apply is nu OOK true tijdens het capturen!
+        let can_apply = !self.config.name.is_empty() && !stopping;
         let can_remove = self.monitor_exists && !self.is_capturing() && !stopping;
         let can_start = self.monitor_exists && !self.is_capturing() && !stopping;
         let can_stop = self.is_capturing() && !stopping;
 
         let btn_width = (272.0 - 4.0) / 2.0;
-
         ui.horizontal(|ui| {
             // Button 1: Create / Update
             let button_text = if self.monitor_exists {
@@ -403,6 +411,54 @@ impl App {
                             .insert_temp(egui::Id::new("virt_raw_y"), self.config.y as f32);
                     });
                 }
+
+                // if response.drag_stopped() {
+                //     let grid_step = 90;
+                //     let snap_threshold = 350.0;
+
+                //     let mut raw_x = self.config.x as f32;
+                //     let mut raw_y = self.config.y as f32;
+                //     let mut snapped_x = false;
+                //     let mut snapped_y = false;
+
+                //     if (raw_x + virt_w).abs() < snap_threshold {
+                //         raw_x = -virt_w;
+                //         snapped_x = true;
+                //     } else if (raw_x - main_w).abs() < snap_threshold {
+                //         raw_x = main_w;
+                //         snapped_x = true;
+                //     }
+
+                //     if (raw_y + virt_h).abs() < snap_threshold {
+                //         raw_y = -virt_h;
+                //         snapped_y = true;
+                //     } else if (raw_y - main_h).abs() < snap_threshold {
+                //         raw_y = main_h;
+                //         snapped_y = true;
+                //     }
+
+                //     if !snapped_x {
+                //         raw_x = (raw_x / grid_step as f32).round() * grid_step as f32;
+                //     }
+                //     if !snapped_y {
+                //         raw_y = (raw_y / grid_step as f32).round() * grid_step as f32;
+                //     }
+
+                //     self.config.x = raw_x as i32;
+                //     self.config.y = raw_y as i32;
+
+                //     // Direct toepassen op Hyprland bij het loslaten van de muis
+                //     if self.monitor_exists {
+                //         self.apply_config();
+                //     }
+
+                //     ui.memory_mut(|m| {
+                //         m.data
+                //             .insert_temp(egui::Id::new("virt_raw_x"), self.config.x as f32);
+                //         m.data
+                //             .insert_temp(egui::Id::new("virt_raw_y"), self.config.y as f32);
+                //     });
+                // }
 
                 // Teken logica
                 painter.rect_filled(canvas_rect, 2.0, CNV);
