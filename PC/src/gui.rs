@@ -3,20 +3,22 @@ use eframe::egui;
 use egui::accesskit::TextAlign::Center;
 use std::time::Duration;
 
+// "rgb(63, 63, 61)"
 // ─── Kleurenpalet ──────────────────────────────────────────────
-const BG_MAIN: egui::Color32 = egui::Color32::from_rgb(18, 18, 24);
-const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(26, 26, 36);
-const BG_INNER: egui::Color32 = egui::Color32::from_rgb(14, 14, 20);
-const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgb(40, 40, 56);
+const BG_MAIN: egui::Color32 = egui::Color32::from_rgb(125, 124, 123);
+const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(35, 35, 33);
+const BG_INNER: egui::Color32 = egui::Color32::from_rgb(24, 24, 22);
+const BORDER_COLOR: egui::Color32 = egui::Color32::from_rgb(60, 60, 58);
 
-const ACCENT_LIME: egui::Color32 = egui::Color32::from_rgb(255, 246, 224);
+const H1: egui::Color32 = egui::Color32::from_rgb(255, 246, 226);
 const ACCENT_HOVER: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
-const ACCENT_BLUE: egui::Color32 = egui::Color32::from_rgb(99, 102, 241);
+const ACCENT_BLUE: egui::Color32 = egui::Color32::from_rgb(100, 100, 98);
 const DANGER_RED: egui::Color32 = egui::Color32::from_rgb(239, 68, 68);
 const DANGER_HOVER: egui::Color32 = egui::Color32::from_rgb(248, 113, 113);
 
-const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(241, 245, 249);
-const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(148, 163, 184);
+const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(170, 170, 168);
+const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(148, 148, 146);
+const VIRTUAL_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -101,7 +103,7 @@ impl App {
             ui.horizontal(|ui| {
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 2.0, ACCENT_LIME);
+                ui.painter().rect_filled(rect, 2.0, H1);
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -129,7 +131,7 @@ impl App {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let capturing = self.is_capturing();
                     let (status_text, color) = if capturing {
-                        ("● STREAMING", ACCENT_LIME)
+                        ("● STREAMING", H1)
                     } else if self.is_stopping() {
                         ("⏳ STOPPING", ACCENT_BLUE)
                     } else if self.monitor_exists {
@@ -147,7 +149,7 @@ impl App {
                     );
 
                     ui.add_space(10.0);
-                    if ui.add(ghost_button("🔄 refresh", ACCENT_LIME)).clicked() {
+                    if ui.add(ghost_button("🔄 refresh", H1)).clicked() {
                         self.refresh();
                     }
                 });
@@ -164,7 +166,7 @@ impl App {
             ui.vertical(|ui| {
                 ui.label(
                     egui::RichText::new("configuration")
-                        .color(ACCENT_LIME)
+                        .color(H1)
                         .size(15.0)
                         .monospace()
                         .strong(),
@@ -190,7 +192,7 @@ impl App {
                                 );
                             });
                             if self.monitor_exists {
-                                ui.label(egui::RichText::new("✓").color(ACCENT_LIME).monospace());
+                                ui.label(egui::RichText::new("✓").color(H1).monospace());
                             }
                         });
                         ui.end_row();
@@ -254,7 +256,7 @@ impl App {
 
                 ui.horizontal(|ui| {
                     // Button 1: Create / Update
-                    set_button_style(ui, ACCENT_LIME, ACCENT_HOVER, BG_MAIN);
+                    set_button_style(ui, H1, ACCENT_HOVER, BG_MAIN);
                     let button_text = if self.monitor_exists {
                         "Update"
                     } else {
@@ -332,7 +334,7 @@ impl App {
                             "position (x: {}  y: {})",
                             self.config.x, self.config.y
                         ))
-                        .color(ACCENT_LIME)
+                        .color(H1)
                         .monospace()
                         .size(14.0),
                     );
@@ -455,8 +457,8 @@ impl App {
                         egui::vec2(main_w * scale, main_h * scale),
                     );
 
-                    painter.rect_filled(main_rect, 2.0, egui::Color32::from_rgb(32, 38, 54));
-                    painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(1.2, ACCENT_BLUE));
+                    painter.rect_filled(main_rect, 2.0, egui::Color32::from_rgb(40, 40, 38));
+                    painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(3.0, ACCENT_BLUE));
                     painter.text(
                         main_rect.center(),
                         egui::Align2::CENTER_CENTER,
@@ -474,22 +476,16 @@ impl App {
                     );
 
                     let (fill_col, stroke_col) = if self.monitor_exists {
-                        (
-                            egui::Color32::from_rgba_premultiplied(132, 204, 22, 40),
-                            ACCENT_LIME,
-                        )
+                        (egui::Color32::from_rgb(140, 140, 138), VIRTUAL_TEXT_COLOR)
                     } else {
-                        (
-                            egui::Color32::from_rgba_premultiplied(148, 163, 184, 20),
-                            TEXT_MUTED,
-                        )
+                        (egui::Color32::from_rgb(100, 100, 98), VIRTUAL_TEXT_COLOR)
                     };
 
                     let is_grabbed = response.dragged();
                     let actual_stroke = if is_grabbed {
-                        egui::Stroke::new(2.0, ACCENT_HOVER)
+                        egui::Stroke::new(3.0, ACCENT_HOVER)
                     } else {
-                        egui::Stroke::new(1.2, stroke_col)
+                        egui::Stroke::new(3.0, stroke_col)
                     };
 
                     painter.rect_filled(virt_rect, 2.0, fill_col);
@@ -502,18 +498,14 @@ impl App {
                             self.config.name, self.config.width, self.config.height
                         ),
                         egui::FontId::monospace(10.0),
-                        if self.monitor_exists {
-                            ACCENT_LIME
-                        } else {
-                            TEXT_MUTED
-                        },
+                        VIRTUAL_TEXT_COLOR,
                     );
 
                     // Instructielabel
                     painter.text(
                         egui::pos2(canvas_rect.min.x + 8.0, canvas_rect.max.y - 8.0),
                         egui::Align2::LEFT_BOTTOM,
-                        "↔ drag to position (snaps to 90px grid)",
+                        "90px gridded",
                         egui::FontId::monospace(10.0),
                         TEXT_MUTED,
                     );
@@ -545,9 +537,9 @@ fn configure_style(ctx: &egui::Context) {
     style.visuals.widgets.inactive.bg_fill = BG_INNER;
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, TEXT_PRIMARY);
     style.visuals.widgets.hovered.bg_fill = BG_INNER;
-    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, ACCENT_LIME);
+    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, H1);
     style.visuals.widgets.active.bg_fill = BG_INNER;
-    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, ACCENT_LIME);
+    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, H1);
 
     ctx.set_style(style);
 }
