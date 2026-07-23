@@ -8,11 +8,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            // MARK: - De Video Layer
+            // MARK: - Het Volledige Videobeeld & Debug
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                // Jouw decoder's display layer
                 VideoDisplayView(displayLayer: viewModel.decoder.displayLayer)
                     .ignoresSafeArea()
 
@@ -20,6 +19,17 @@ struct ContentView: View {
                     Text("Ready to Connect")
                         .font(.title2)
                         .foregroundColor(.gray)
+                        .allowsHitTesting(false)
+                } else {
+                    Text(viewModel.decoderDebug)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.green)
+                        .padding(8)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 40)
+                        .allowsHitTesting(false)
                 }
             }
             .onTapGesture {
@@ -46,7 +56,7 @@ struct ContentView: View {
                     }
             )
 
-            // MARK: - De Notch
+            // MARK: - De Zwevende Notch
             if !viewModel.isStreaming || isNotchVisible {
                 NotchView(viewModel: viewModel, isNotchVisible: $isNotchVisible)
                     .offset(x: viewModel.isStreaming && !isNotchVisible ? -200 : 16)
@@ -57,24 +67,37 @@ struct ContentView: View {
     }
 }
 
-// MARK: - UIViewRepresentable om de AVSampleBufferDisplayLayer in SwiftUI te tonen
+// // MARK: - UIViewRepresentable
 // struct VideoDisplayView: UIViewRepresentable {
 //     var displayLayer: AVSampleBufferDisplayLayer
 
-//     func makeUIView(context: Context) -> UIView {
-//         let view = UIView()
-//         view.backgroundColor = .black
-//         view.layer.addSublayer(displayLayer)
-//         return view
+//     func makeUIView(context: Context) -> PlayerUIView {
+//         return PlayerUIView(displayLayer: displayLayer)
 //     }
 
-//     func updateUIView(_ uiView: UIView, context: Context) {
-//         // Zorg dat de videolayer altijd precies de grootte van het scherm aanneemt
-//         displayLayer.frame = uiView.bounds
+//     func updateUIView(_ uiView: PlayerUIView, context: Context) {}
+
+//     class PlayerUIView: UIView {
+//         let displayLayer: AVSampleBufferDisplayLayer
+
+//         init(displayLayer: AVSampleBufferDisplayLayer) {
+//             self.displayLayer = displayLayer
+//             super.init(frame: .zero)
+//             self.layer.addSublayer(displayLayer)
+//         }
+
+//         required init?(coder: NSCoder) {
+//             fatalError("init(coder:) has not been implemented")
+//         }
+
+//         override func layoutSubviews() {
+//             super.layoutSubviews()
+//             displayLayer.frame = self.bounds
+//         }
 //     }
 // }
 
-// MARK: - UIViewRepresentable om de AVSampleBufferDisplayLayer in SwiftUI te tonen
+// MARK: - UIViewRepresentable
 struct VideoDisplayView: UIViewRepresentable {
     var displayLayer: AVSampleBufferDisplayLayer
 
@@ -82,17 +105,16 @@ struct VideoDisplayView: UIViewRepresentable {
         return PlayerUIView(displayLayer: displayLayer)
     }
 
-    func updateUIView(_ uiView: PlayerUIView, context: Context) {
-        // Update wordt aangeroepen door SwiftUI
-    }
+    func updateUIView(_ uiView: PlayerUIView, context: Context) {}
 
-    // Een custom UIView die de layer altijd perfect uitrekt
     class PlayerUIView: UIView {
         let displayLayer: AVSampleBufferDisplayLayer
 
         init(displayLayer: AVSampleBufferDisplayLayer) {
             self.displayLayer = displayLayer
             super.init(frame: .zero)
+            // TIJDELIJK: Maak de achtergrond rood om te zien of de view echt op het scherm staat!
+            self.backgroundColor = .black
             self.layer.addSublayer(displayLayer)
         }
 
@@ -102,7 +124,7 @@ struct VideoDisplayView: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            // Cruciaal: Zorg dat de video always het hele scherm vult
+            // Forceer de layer altijd exact zo groot als de view zelf
             displayLayer.frame = self.bounds
         }
     }

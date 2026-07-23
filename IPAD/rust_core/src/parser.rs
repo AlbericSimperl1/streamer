@@ -152,17 +152,26 @@ where
 
     // Strip emulation prevention bytes (00 00 03 → 00 00). Dit is essentieel
     // voor correcte SPS/PPS-parsing door VideoToolbox.
-    let stripped = strip_epb(raw);
+    // let stripped = strip_epb(raw);
+
+    // if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
+    //     *frame_count += 1;
+    // }
+
+    // // We parsen de resolutie (SPS) hier niet meer in Rust.
+    // // VideoToolbox in Swift leest de SPS zelf uit en bepaalt perfect de
+    // // 1200x900 resolutie. Dit voorkomt de "16x96" bugs in het HUD.
+
+    // on_nalu(stripped.as_ptr(), stripped.len() as u32, nal_type);
+
+    // NICHT STRIPPEN! VideoToolbox verwacht de Emulation Prevention Bytes.
 
     if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
         *frame_count += 1;
     }
 
-    // We parsen de resolutie (SPS) hier niet meer in Rust.
-    // VideoToolbox in Swift leest de SPS zelf uit en bepaalt perfect de
-    // 1200x900 resolutie. Dit voorkomt de "16x96" bugs in het HUD.
-
-    on_nalu(stripped.as_ptr(), stripped.len() as u32, nal_type);
+    // Stuur de ruwe NAL unit (zonder startcode) naar Swift.
+    on_nalu(raw.as_ptr(), raw.len() as u32, nal_type);
 }
 
 /// Verwijder emulation prevention bytes: `00 00 03` → `00 00`.

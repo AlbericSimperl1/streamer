@@ -18,8 +18,10 @@ import os
 ///    na een mislukte enqueue.
 /// 5. Alle state-aanpassingen via `OSAllocatedUnfairLock` (iPadOS 16+),
 ///    veel sneller dan NSLock en geen pomping-risico.
-final class H264Decoder: @unchecked Sendable {
+final class H264Decoder: ObservableObject, @unchecked Sendable {
+    var onStatusUpdate: ((String) -> Void)?
     let displayLayer = AVSampleBufferDisplayLayer()
+    // @Published var debugStatus: String = "Wachten op decoder..."
 
     /// Voor HUD-foutmeldingen.
     @MainActor var lastErrorMessage: String?
@@ -49,17 +51,36 @@ final class H264Decoder: @unchecked Sendable {
 
     // MARK: - Intern (op `h264.decode` queue)
 
+    // private func handle(_ nalu: Data, nalType: UInt8) {
+    //     switch nalType {
+    //     case 7: // SPS
+    //         lock.withLock { $0.sps = nalu }
+    //         rebuildFormatDescription()
+    //     case 8: // PPS
+    //         lock.withLock { $0.pps = nalu }
+    //         rebuildFormatDescription()
+    //     case 5: // IDR
+    //         enqueueFrame(nalu, isIDR: true)
+    //     case 1: // non-IDR (P-frame)
+    //         enqueueFrame(nalu, isIDR: false)
+    //     default:
+    //         break
+    //     }
+    // }
+
     private func handle(_ nalu: Data, nalType: UInt8) {
         switch nalType {
-        case 7: // SPS
+        case 7:  // SPS
             lock.withLock { $0.sps = nalu }
+            onStatusUpdate?("SPS ontvangen (\(nalu.count) bytes)")
             rebuildFormatDescription()
-        case 8: // PPS
+        case 8:  // PPS
             lock.withLock { $0.pps = nalu }
+            onStatusUpdate?("PPS ontvangen (\(nalu.count) bytes)")
             rebuildFormatDescription()
-        case 5: // IDR
+        case 5:  // IDR
             enqueueFrame(nalu, isIDR: true)
-        case 1: // non-IDR (P-frame)
+        case 1:  // non-IDR (P-frame)
             enqueueFrame(nalu, isIDR: false)
         default:
             break
@@ -76,9 +97,10 @@ final class H264Decoder: @unchecked Sendable {
             var formatDesc: CMVideoFormatDescription?
             let status = sps.withUnsafeBytes { spsBuf -> OSStatus in
                 pps.withUnsafeBytes { ppsBuf -> OSStatus in
-                    guard let spsBase = spsBuf.baseAddress?
+                    guard
+                        let spsBase = spsBuf.baseAddress?
                             .assumingMemoryBound(to: UInt8.self),
-                          let ppsBase = ppsBuf.baseAddress?
+                        let ppsBase = ppsBuf.baseAddress?
                             .assumingMemoryBound(to: UInt8.self)
                     else { return -1 }
 
@@ -98,14 +120,17 @@ final class H264Decoder: @unchecked Sendable {
 
             if status == noErr {
                 state.formatDescription = formatDesc
+                onStatusUpdate?("✅ FormatDescription SUCCES!")
                 return (formatDesc, true)
+            } else {
+                onStatusUpdate?("❌ FormatDescription FAAL: \(status)")
+                return (nil, false)
             }
-            return (nil, false)
         }
 
         // Bij gewijzigde formatDescription: flush de renderer zodat hij de nieuwe
         // SPS/PPS accepteert (voorkomt .failed state na resolutie-switch).
-        if let _ = result?.0, result?.1 == true {
+        if result?.0 != nil, result?.1 == true {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 let r = self.displayLayer.sampleBufferRenderer
@@ -116,14 +141,25 @@ final class H264Decoder: @unchecked Sendable {
         }
     }
 
+    // private func enqueueFrame(_ naluPayload: Data, isIDR: Bool) {
+    //     // 1. Haal de huidige formatDescription op onder lock.
+    //     let fmt: CMVideoFormatDescription? = lock.withLock { $0.formatDescription }
+    //     guard let formatDescription = fmt else {
+    //         // Geen SPS/PPS nog — wacht rustig; geen crash-nee drop-nee.
+    //         // We flushen niets; bij de volgende IDR met SPS+PPS herstelt het.
+    //         return
+    //     }
+
     private func enqueueFrame(_ naluPayload: Data, isIDR: Bool) {
         // 1. Haal de huidige formatDescription op onder lock.
         let fmt: CMVideoFormatDescription? = lock.withLock { $0.formatDescription }
         guard let formatDescription = fmt else {
-            // Geen SPS/PPS nog — wacht rustig; geen crash-nee drop-nee.
-            // We flushen niets; bij de volgende IDR met SPS+PPS herstelt het.
+            onStatusUpdate?("⚠️ Frame gedropt: SPS/PPS mist nog!")
             return
         }
+
+        NSLog("🎬 Frame decoderen... IDR: \(isIDR), Size: \(naluPayload.count)")
+        // ... de rest van je enqueueFrame code ...
 
         // 2. Bouw AVCC-payload: 4-byte big-endian length prefix + NAL bytes.
         var avcc = Data(count: 4 + naluPayload.count)
@@ -186,10 +222,19 @@ final class H264Decoder: @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let r = self.displayLayer.sampleBufferRenderer
+
             if r.status == .failed {
+                self.onStatusUpdate?(
+                    "❌ DisplayLayer FAILED: \(r.error?.localizedDescription ?? "Onbekend")")
                 r.flush()
             }
+
             r.enqueue(sBuf)
+
+            // Laat ons weten of hij daadwerkelijk frames accepteert!
+            self.onStatusUpdate?(
+                "🎬 Frame naar scherm gestuurd! (Queue: \(r.status == .rendering ? "Actief" : "Wacht"))"
+            )
         }
     }
 
