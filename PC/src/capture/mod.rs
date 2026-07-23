@@ -128,31 +128,28 @@ fn run_capture_loop(
     status: Arc<Mutex<CaptureStatus>>,
     output_path: String,
 ) {
-    // 1. Portal handshake (async). Use a one-off tokio runtime.
-    let portal_result = {
-        let rt = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(rt) => rt,
-            Err(e) => {
-                set_status(
-                    &status,
-                    CaptureStatus::Error(format!("Tokio runtime failed: {e}")),
-                );
-                return;
-            }
-        };
-        rt.block_on(portal::open_screencast())
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            set_status(
+                &status,
+                CaptureStatus::Error(format!("Tokio runtime failed: {e}")),
+            );
+            return;
+        }
     };
 
-    let handle = match portal_result {
+    let handle = match rt.block_on(portal::open_screencast()) {
         Ok(v) => v,
         Err(e) => {
             set_status(&status, CaptureStatus::Error(format!("Portal: {e}")));
             return;
         }
     };
+
     let pw_fd = handle.fd;
     let node_id = handle.node_id;
 
@@ -161,7 +158,6 @@ fn run_capture_loop(
         CaptureStatus::Starting("Connecting PipeWire stream…".into()),
     );
 
-    // 2. PipeWire → frame channel → FFmpeg.
     let (tx, rx) = std::sync::mpsc::channel::<Frame>();
 
     let status_for_feeder = Arc::clone(&status);
@@ -172,14 +168,77 @@ fn run_capture_loop(
         .spawn(move || run_encoder(rx, stop_for_feeder, status_for_feeder, path_for_feeder))
         .expect("spawn encoder feeder");
 
-    // Blocks until stop_flag is set or PipeWire dies.
+    // PipeWire capture loop (blokkeert tot stop_flag true wordt)
     if let Err(e) = pipewire::run_capture(pw_fd, node_id, tx, Arc::clone(&stop_flag)) {
         set_status(&status, CaptureStatus::Error(format!("PipeWire: {e}")));
     }
 
-    // Dropping rx naturally ends the feeder when the last queued frame is read.
+    // Wacht tot de encoder thread alle frames heeft verwerkt
     let _ = feeder.join();
+
+    set_status(&status, CaptureStatus::Idle);
+    // `handle`, `session` en `rt` worden hier automatisch gedropt.
+    // De DBus-socket sluit netjes af en geeft de portal-daemon direct het signaal.
 }
+
+/// Runs entirely on the capture thread.
+// fn run_capture_loop(
+//     stop_flag: Arc<AtomicBool>,
+//     status: Arc<Mutex<CaptureStatus>>,
+//     output_path: String,
+// ) {
+//     // 1. Portal handshake (async). Use a one-off tokio runtime.
+//     let portal_result = {
+//         let rt = match tokio::runtime::Builder::new_current_thread()
+//             .enable_all()
+//             .build()
+//         {
+//             Ok(rt) => rt,
+//             Err(e) => {
+//                 set_status(
+//                     &status,
+//                     CaptureStatus::Error(format!("Tokio runtime failed: {e}")),
+//                 );
+//                 return;
+//             }
+//         };
+//         rt.block_on(portal::open_screencast())
+//     };
+
+//     let handle = match portal_result {
+//         Ok(v) => v,
+//         Err(e) => {
+//             set_status(&status, CaptureStatus::Error(format!("Portal: {e}")));
+//             return;
+//         }
+//     };
+//     let pw_fd = handle.fd;
+//     let node_id = handle.node_id;
+
+//     set_status(
+//         &status,
+//         CaptureStatus::Starting("Connecting PipeWire stream…".into()),
+//     );
+
+//     // 2. PipeWire → frame channel → FFmpeg.
+//     let (tx, rx) = std::sync::mpsc::channel::<Frame>();
+
+//     let status_for_feeder = Arc::clone(&status);
+//     let stop_for_feeder = Arc::clone(&stop_flag);
+//     let path_for_feeder = output_path.clone();
+//     let feeder = std::thread::Builder::new()
+//         .name("hyprpad-encoder".into())
+//         .spawn(move || run_encoder(rx, stop_for_feeder, status_for_feeder, path_for_feeder))
+//         .expect("spawn encoder feeder");
+
+//     // Blocks until stop_flag is set or PipeWire dies.
+//     if let Err(e) = pipewire::run_capture(pw_fd, node_id, tx, Arc::clone(&stop_flag)) {
+//         set_status(&status, CaptureStatus::Error(format!("PipeWire: {e}")));
+//     }
+
+//     // Dropping rx naturally ends the feeder when the last queued frame is read.
+//     let _ = feeder.join();
+// }
 
 /// Runs on the `hyprpad-encoder` thread. Receives frames and pumps them into
 /// FFmpeg at a constant framerate.

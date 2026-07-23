@@ -10,7 +10,7 @@ use std::os::fd::OwnedFd;
 pub struct PortalHandle {
     pub fd: OwnedFd,
     pub node_id: u32,
-    pub session: Session<Screencast>, // <-- Vervangen door Session<Screencast>
+    pub session: Session<Screencast>,
 }
 
 /// Run the screencast portal flow. Triggers a system popup asking the user to
