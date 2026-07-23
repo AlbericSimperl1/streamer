@@ -1,115 +1,286 @@
-import CRustCore
+import Combine
 import Foundation
-import SwiftUI
+import Network
 
-/// Koppelvlak tussen de Rust core en de Swift UI.
-///
-/// `start()` roept `hyprpad_start()` aan met:
-/// - één NALU-callback (`onNalu`) die op de Rust parser-thread binnenkomt
-/// - één log-callback (`onLog`) voor status/foutmeldingen
-/// - een `Unmanaged<StreamContext>` pointer als ctx
-///
-/// Stats (fps/bytes/resolutie) worden **niet** via callbacks gepusht — Swift
-/// polt ze via `hyprpad_stats()` op een 0.25s Timer en werkt de main-actor
-/// AppState bij. Dit was de voornaamste crash-oorzaak in de vorige app: de
-/// callback liep op een Rust-thread en raakte SwiftUI-state aan zonder hop.
-///
-/// `StreamEngine` zelf is `@MainActor`-geïsoleerd: alleen de timer + lifecycle
-/// methodes zitten erop. De C-callbacks zijn `static` en raken géén
-/// instance-state (alleen de `Unmanaged<StreamContext>` pointer).
-@MainActor
-final class StreamEngine: ObservableObject {
+class StreamEngine: ObservableObject, @unchecked Sendable {
+    @Published var isStreaming = false
+    @Published var fps: Double = 0
+    @Published var bitrateMbps: Double = 0
+    @Published var latencyMs: Double = 0
+
+    // Jouw bestaande decoder
     let decoder = H264Decoder()
-    private var context: StreamContext?
-    private var statsTimer: Timer?
 
-    func start(port: UInt16, appState: AppState) {
-        // Context wordt op de heap gehouden door Unmanaged.passRetained.
-        let ctx = StreamContext(decoder: decoder)
-        let ctxPtr = Unmanaged.passRetained(ctx).toOpaque()
-        self.context = ctx
+    private var listener: NWListener?
+    private var statsTimer: DispatchSourceTimer?
 
-        let callbacks = HyprpadCallbacks(
-            on_nalu: StreamEngine.onNalu,
-            on_log: StreamEngine.onLog
-        )
+    // Veilige thread-safe accumulatie van stats
+    private let statsQueue = DispatchQueue(label: "stats.queue")
+    private var bytesReceived: Int = 0
+    private var packetsReceived: Int = 0
 
-        let started = hyprpad_start(port, callbacks, ctxPtr)
+    // Configuratie
+    let streamPort: NWEndpoint.Port = 5000
 
-        if started {
-            appState.bitrateRefDate = Date()
-            appState.bitrateRefBytes = 0
-            startStatsTimer(appState: appState)
-        } else {
-            Unmanaged<StreamContext>.fromOpaque(ctxPtr).release()
-            self.context = nil
-            appState.isListening = false
-            appState.status = "Kon niet starten (UDP bind?)"
-        }
+    // ⚠️ VERANDER DIT NAAR HET LOKALE IP ADRES VAN JOUW PC! (Bijv. "192.168.1.50")
+    let pcIPAddress = "192.168.0.189"
+
+    func startListening() {
+        guard !isStreaming else { return }
+        isStreaming = true
+
+        // 1. Forceer de Local Network Popup
+        triggerLocalNetworkPrompt()
+
+        // 2. Start de UDP Listener
+        startNetworkListener()
+
+        // 3. Start de statistieken monitor
+        startStatsMonitoring()
     }
 
-    func stop(appState: AppState) {
-        hyprpad_stop()
-        statsTimer?.invalidate()
-        statsTimer = nil
+    func stopListening() {
+        isStreaming = false
+        listener?.cancel()
+        listener = nil
+        stopStatsMonitoring()
 
-        if let ctx = context {
-            let ptr = Unmanaged.passUnretained(ctx).toOpaque()
-            Unmanaged<StreamContext>.fromOpaque(ptr).release()
-        }
-        context = nil
         decoder.reset()
 
-        appState.isListening = false
-        appState.status = "Gestopt"
-        appState.fps = 0
-        appState.bitrateMbps = 0
+        fps = 0
+        bitrateMbps = 0
+        latencyMs = 0
     }
 
-    private func startStatsTimer(appState: AppState) {
-        statsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
-            let s = hyprpad_stats()
-            applyStatsToAppState(s, appState)
+    // MARK: - Apple Network Stack: Forceer iOS Popup
+    private func triggerLocalNetworkPrompt() {
+        let host = NWEndpoint.Host(pcIPAddress)
+        let port = NWEndpoint.Port(rawValue: UInt16(streamPort.rawValue))!
+
+        // Maak een uitgaande UDP connectie om de iOS privacy popup te forceren
+        let connection = NWConnection(host: host, port: port, using: .udp)
+
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                print("✅ Ping verzonden. Local Network popup is getoond.")
+                let pingData = "PING".data(using: .utf8)!
+                connection.send(
+                    content: pingData,
+                    completion: .contentProcessed({ _ in
+                        connection.cancel()  // Sluit de connectie, we hebben de popup nu geforceerd
+                    }))
+            case .failed(let error):
+                print("❌ Local Network ping failed: \(error)")
+                connection.cancel()
+            default:
+                break
+            }
+        }
+        connection.start(queue: .global())
+    }
+
+    // MARK: - Apple Network Stack: UDP Listener
+    private func startNetworkListener() {
+        do {
+            let params = NWParameters.udp
+            params.allowLocalEndpointReuse = true
+            listener = try NWListener(using: params, on: streamPort)
+
+            listener?.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    print(
+                        "✅ iPad NWListener luistert nu op UDP poort \(self?.streamPort.rawValue ?? 0)"
+                    )
+                case .failed(let error):
+                    print("❌ NWListener gefaald: \(error)")
+                    self?.stopListening()
+                default:
+                    break
+                }
+            }
+
+            // Elke inkomende "connectie" (UDP packet stream) wordt hier afgehandeld
+            listener?.newConnectionHandler = { [weak self] connection in
+                guard let self = self else { return }
+                connection.start(queue: .global())
+                self.receiveData(on: connection)
+            }
+
+            listener?.start(queue: .global())
+        } catch {
+            print("❌ Fout bij aanmaken NWListener: \(error)")
         }
     }
 
-    // MARK: - C-callbacks (@convention(c))
-    //
-    // Deze callbacks komen op een Rust-achtergrondthread binnen.
-    // Ze zijn `static` — ze raken géén instance-state. Alles wat ze doen:
-    // 1. pointer unwrappen
-    // 2. bytes kopiëren
-    // 3. dispatch naar de decoder-eigen serial queue (zie H264Decoder)
-    // Géén SwiftUI, géén main-thread access vanuit deze callbacks.
+    private func receiveData(on connection: NWConnection) {
+        // Ontvang een compleet UDP message
+        connection.receiveMessage { [weak self] data, context, isComplete, error in
+            guard let self = self else { return }
 
-    private static let onNalu: OnNalu = { dataPtr, len, nalType, ctxPtr in
-        guard let dataPtr = dataPtr, len > 0, let ctxPtr = ctxPtr else { return }
-        print("NALU, type \(nalType), length \(len)")
-        let ctx = Unmanaged<StreamContext>.fromOpaque(ctxPtr).takeUnretainedValue()
+            if let error = error {
+                print("❌ Receive error: \(error)")
+                connection.cancel()
+                return
+            }
 
-        // Kopieer de bytes — de Rust-pointer is enkel geldig tijdens deze call.
-        let payload = Data(bytes: dataPtr, count: Int(len))
+            if let data = data, !data.isEmpty {
+                // Update stats thread-safe
+                self.statsQueue.sync {
+                    self.bytesReceived += data.count
+                    self.packetsReceived += 1
+                }
 
-        // Dispatch naar de decoder-eigen serial queue (zie H264Decoder).
-        ctx.decoder.dispatch(payload, nalType: nalType)
+                // Verwerk de ruwe H.264 data
+                self.feedToDecoder(data: data)
+            }
+
+            // Blijf luisteren naar de volgende packets
+            self.receiveData(on: connection)
+        }
     }
 
-    private static let onLog: OnLog = { level, msgPtr, ctxPtr in
-        guard let msgPtr = msgPtr, let ctxPtr = ctxPtr else { return }
-        let _ = Unmanaged<StreamContext>.fromOpaque(ctxPtr).takeUnretainedValue()
-        let message = String(cString: msgPtr)
+    // MARK: - Veilige NAL Unit Parser
+    // private func feedToDecoder(data: Data) {
+    //     if data.isEmpty { return }
 
-        let prefix = level == 0 ? "[hyprPad]" : (level == 1 ? "[hyprPad WARN]" : "[hyprPad ERR]")
-        NSLog("\(prefix) \(message)")
+    //     let bytes = [UInt8](data)
+    //     var i = 0
+    //     var lastNaluStart = -1
+
+    //     while i < bytes.count {
+    //         var startCodeLength = 0
+    //         // Check voor 4-byte startcode (00 00 00 01)
+    //         if i + 3 < bytes.count && bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 0
+    //             && bytes[i + 3] == 1
+    //         {
+    //             startCodeLength = 4
+    //         }
+    //         // Check voor 3-byte startcode (00 00 01)
+    //         else if i + 2 < bytes.count && bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1 {
+    //             startCodeLength = 3
+    //         }
+
+    //         if startCodeLength > 0 {
+    //             // Als we al een startcode hadden, hebben we nu het einde gevonden
+    //             if lastNaluStart != -1 {
+    //                 let payloadStart = lastNaluStart
+    //                 let payloadEnd = i
+
+    //                 if payloadEnd > payloadStart {
+    //                     let payload = Data(bytes[payloadStart..<payloadEnd])
+    //                     if payload.count > 0 {
+    //                         let nalType = payload[0] & 0x1F
+    //                         self.decoder.dispatch(payload, nalType: nalType)
+    //                     }
+    //                 }
+    //             }
+
+    //             // Update de startpositie voor de volgende NAL (na de startcode)
+    //             lastNaluStart = i + startCodeLength
+    //             i += startCodeLength
+    //         } else {
+    //             i += 1
+    //         }
+    //     }
+
+    //     // Verwerk de allerlaatste NAL unit in de packet
+    //     if lastNaluStart != -1 && lastNaluStart < bytes.count {
+    //         let payload = Data(bytes[lastNaluStart..<bytes.count])
+    //         if payload.count > 0 {
+    //             let nalType = payload[0] & 0x1F
+    //             self.decoder.dispatch(payload, nalType: nalType)
+    //         }
+    //     }
+    // }
+
+    // MARK: - Veilige NAL Unit Parser
+    private func feedToDecoder(data: Data) {
+        if data.isEmpty { return }
+
+        let bytes = [UInt8](data)
+        var i = 0
+        var lastNaluStart = -1
+        var foundStartCode = false
+
+        while i < bytes.count {
+            var startCodeLength = 0
+            if i + 3 < bytes.count && bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 0
+                && bytes[i + 3] == 1
+            {
+                startCodeLength = 4
+            } else if i + 2 < bytes.count && bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1
+            {
+                startCodeLength = 3
+            }
+
+            if startCodeLength > 0 {
+                foundStartCode = true
+                if lastNaluStart != -1 {
+                    let payloadStart = lastNaluStart
+                    let payloadEnd = i
+
+                    if payloadEnd > payloadStart {
+                        let payload = Data(bytes[payloadStart..<payloadEnd])
+                        if payload.count > 0 {
+                            let nalType = payload[0] & 0x1F
+                            self.decoder.dispatch(payload, nalType: nalType)
+                        }
+                    }
+                }
+
+                lastNaluStart = i + startCodeLength
+                i += startCodeLength
+            } else {
+                i += 1
+            }
+        }
+
+        if foundStartCode {
+            // Verwerk de laatste NAL unit in de packet
+            if lastNaluStart != -1 && lastNaluStart < bytes.count {
+                let payload = Data(bytes[lastNaluStart..<bytes.count])
+                if payload.count > 0 {
+                    let nalType = payload[0] & 0x1F
+                    self.decoder.dispatch(payload, nalType: nalType)
+                }
+            }
+        } else {
+            // GEEN STARTCODE GEVONDEN!
+            // De PC stuurt waarschijnlijk 1 NAL unit per UDP packet (raw payload)
+            // We behandelen het hele packet direct als 1 NAL unit.
+            let nalType = bytes[0] & 0x1F
+            self.decoder.dispatch(data, nalType: nalType)
+        }
     }
-}
 
-/// Heap-gealloceerde context die meegaat in de C-ABI pointer.
-/// `@unchecked Sendable`: de decoder heeft zijn eigen serial queue; de
-/// reference zelf is thread-safe zolang we niet tegelijk muteren.
-private final class StreamContext: @unchecked Sendable {
-    let decoder: H264Decoder
-    init(decoder: H264Decoder) {
-        self.decoder = decoder
+    // MARK: - Statistieken Monitor
+    private func startStatsMonitoring() {
+        statsQueue.sync {
+            bytesReceived = 0
+            packetsReceived = 0
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 1, repeating: 1.0)
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+
+            self.statsQueue.sync {
+                self.fps = Double(self.packetsReceived)
+                self.bitrateMbps = (Double(self.bytesReceived) * 8) / 1000000.0
+
+                self.bytesReceived = 0
+                self.packetsReceived = 0
+            }
+        }
+        timer.resume()
+        statsTimer = timer
+    }
+
+    private func stopStatsMonitoring() {
+        statsTimer?.cancel()
+        statsTimer = nil
     }
 }
