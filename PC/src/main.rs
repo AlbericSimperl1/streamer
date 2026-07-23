@@ -10,7 +10,7 @@ mod types;
 fn main() -> Result<(), eframe::Error> {
     let scale: f32 = 1.5;
     let w: f32 = 740.0;
-    let h: f32 = 270.0;
+    let h: f32 = 470.0;
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
