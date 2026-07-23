@@ -5,7 +5,7 @@ use std::time::Duration;
 
 // ─── Kleurenpalet ──────────────────────────────────────────────
 
-const ACCENT_HOVER: egui::Color32 = egui::Color32::from_rgb(255, 232, 106);
+const ACCENT_HOVER: egui::Color32 = egui::Color32::from_rgb(40, 235, 146);
 const DANGER_RED: egui::Color32 = egui::Color32::from_rgb(239, 68, 68);
 const DANGER_HOVER: egui::Color32 = egui::Color32::from_rgb(248, 113, 113);
 
