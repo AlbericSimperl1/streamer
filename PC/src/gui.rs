@@ -15,15 +15,17 @@ const C1: egui::Color32 = egui::Color32::from_rgba_premultiplied(4, 6, 10, 5);
 const C2: egui::Color32 = egui::Color32::from_rgb(33, 35, 39); // panels
 const C3: egui::Color32 = egui::Color32::from_rgb(23, 25, 29); // input fields
 const C4: egui::Color32 = egui::Color32::from_rgb(84, 86, 90); // borders
+const C2_HOVER: egui::Color32 = egui::Color32::from_rgb(48, 51, 57); // Net iets lichter dan C2
+const C2_CLICKED: egui::Color32 = egui::Color32::from_rgb(68, 72, 80); // Net iets lichter dan C2_HOVER
 
 /// text
 const T0: egui::Color32 = egui::Color32::from_rgb(255, 255, 255); // "titels"
 const T1: egui::Color32 = egui::Color32::from_rgb(255, 246, 226); // primary
 const T2: egui::Color32 = egui::Color32::from_rgb(146, 138, 132); // inactive
 
-/// accent
-const A1: egui::Color32 = egui::Color32::from_rgb(255, 238, 143); // primary
-const A2: egui::Color32 = egui::Color32::from_rgb(97, 83, 21); // secondary
+/// accent #296b66
+const A1: egui::Color32 = egui::Color32::from_rgb(0, 123, 80); // primary
+const A2: egui::Color32 = egui::Color32::from_rgb(41, 107, 107); // secondary
 
 impl App {
     // Bestaande new() blijft zoals hij was:
@@ -127,100 +129,6 @@ impl App {
             });
         });
     }
-
-    /// Configuratie Grid (Identifier, Width, Height, FPS, Scale, Status)
-    // fn render_config(&mut self, ui: &mut egui::Ui) {
-    //     ui.spacing_mut().interact_size.y = 4.0;
-
-    //     // slider_width bepaalt de totale horizontale lengte van de slider (standaard is 100.0)
-    //     ui.spacing_mut().slider_width = 90.0;
-    //     ui.spacing_mut().slider_rail_height = 4.0;
-
-    //     egui::Grid::new("config_grid")
-    //         .num_columns(2)
-    //         .spacing([12.0, 10.0])
-    //         .show(ui, |ui| {
-    //             // ─── 1. Identifier (Achtergrond C2 met enkel een onderlijn) ───
-    //             ui.label(egui::RichText::new("identifier :").color(T1).monospace());
-    //             ui.horizontal(|ui| {
-    //                 ui.add_enabled_ui(!self.monitor_exists, |ui| {
-    //                     // frame(false) haalt de standaard achtergrond & randen weg (waardoor C2 zichtbaar blijft)
-    //                     let response = ui.add(
-    //                         egui::TextEdit::singleline(&mut self.config.name)
-    //                             .desired_width(110.0)
-    //                             .frame(false),
-    //                     );
-
-    //                     // Teken handmatig de dunne onderlijn onder het veld
-    //                     let line_y = response.rect.bottom();
-    //                     ui.painter().line_segment(
-    //                         [
-    //                             egui::pos2(response.rect.min.x, line_y),
-    //                             egui::pos2(response.rect.max.x, line_y),
-    //                         ],
-    //                         egui::Stroke::new(1.0, C4),
-    //                     );
-    //                 });
-    //                 if self.monitor_exists {
-    //                     ui.label(egui::RichText::new("✓").color(T0).monospace());
-    //                 }
-    //             });
-    //             ui.end_row();
-
-    //             // ─── 2. Width (Diskrete Slider: stappen van 30, max 3840) ───
-    //             ui.label(egui::RichText::new("width :").color(T1).monospace());
-    //             ui.add(
-    //                 egui::Slider::new(&mut self.config.width, 300..=3840)
-    //                     .step_by(30.0)
-    //                     .suffix(" px"),
-    //             );
-    //             ui.end_row();
-
-    //             // ─── 3. Height (Diskrete Slider: stappen van 30, max 3840) ───
-    //             ui.label(egui::RichText::new("height :").color(T1).monospace());
-    //             ui.add(
-    //                 egui::Slider::new(&mut self.config.height, 300..=3840)
-    //                     .step_by(30.0)
-    //                     .suffix(" px"),
-    //             );
-    //             ui.end_row();
-
-    //             // ─── 4. Frame Rate (Integer Slider: max 90 Hz) ───
-    //             ui.label(egui::RichText::new("frame rate :").color(T1).monospace());
-    //             ui.add(
-    //                 egui::Slider::new(&mut self.config.fps, 1..=90)
-    //                     .step_by(1.0)
-    //                     .suffix(" Hz"),
-    //             );
-    //             ui.end_row();
-
-    //             // ─── 5. Scale (Float Slider: stappen van 0.05, max 4.0) ───
-    //             ui.label(egui::RichText::new("scale :").color(T1).monospace());
-    //             ui.add(egui::Slider::new(&mut self.config.scale, 0.5f32..=4.0f32).step_by(0.05));
-
-    //             // ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-    //             //     let capturing = self.is_capturing();
-    //             //     let (status_text, color) = if capturing {
-    //             //         ("● STREAMING", A1)
-    //             //     } else if self.is_stopping() {
-    //             //         ("⏳ STOPPING", DANGER_RED)
-    //             //     } else if self.monitor_exists {
-    //             //         ("● ONLINE", T1)
-    //             //     } else {
-    //             //         ("○ OFFLINE", T2)
-    //             //     };
-
-    //             //     ui.label(
-    //             //         egui::RichText::new(status_text)
-    //             //             .color(color)
-    //             //             .size(12.0)
-    //             //             .monospace()
-    //             //             .strong(),
-    //             //     );
-    //             // });
-    //             // ui.end_row();
-    //         });
-    // }
 
     /// Configuratie Grid (Identifier, Width, Height, FPS, Scale, Status)
     fn render_config(&mut self, ui: &mut egui::Ui) {
@@ -708,7 +616,6 @@ pub fn custom_button(
     let desired_size = Vec2::new(width, 32.0);
 
     // HARD SECURITY: Als 'enabled' false is, luisteren we NIET naar kliks.
-    // Dit voorkomt dat de knop reageert als hij grijs getekend staat.
     let sense = if enabled {
         Sense::click()
     } else {
@@ -717,20 +624,25 @@ pub fn custom_button(
 
     let (rect, response) = ui.allocate_exact_size(desired_size, sense);
 
-    // Render-berekeningen alleen uitvoeren als de widget zichtbaar is op het scherm
     if ui.is_rect_visible(rect) {
-        // Bepaal visuele staat
-        let (border_col, text_col) = if !enabled {
-            (C4, T2)
+        // Bepaal de achtergrond-, rand- en tekstkleur op basis van de staat
+        let (bg_col, border_col, text_col) = if !enabled {
+            (C2, C4, T2)
+        } else if response.is_pointer_button_down_on() {
+            // 1. Ingedrukt / Clicked staat (Lichtst)
+            (C2_CLICKED, C4, T0)
         } else if response.hovered() {
-            (C4, T1)
+            // 2. Muis zweeft erboven / Hover staat (Middel)
+            (C2_HOVER, C4, T0)
         } else {
-            (C4, T1)
+            // 3. Ruststand / Normal staat
+            (C2, C4, T1)
         };
 
-        // Teken de achtergrond en rand
-        ui.painter().rect_filled(rect, 2.0, C2);
-        ui.painter().rect_stroke(rect, 2.0, Stroke::new(0.5, C4));
+        // Teken achtergrond en rand
+        ui.painter().rect_filled(rect, 2.0, bg_col);
+        ui.painter()
+            .rect_stroke(rect, 2.0, Stroke::new(0.5, border_col));
 
         // Teken de tekst in het midden
         ui.painter().text(
