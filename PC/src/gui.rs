@@ -433,7 +433,7 @@ impl App {
                     ui.allocate_painter(canvas_size, egui::Sense::click_and_drag());
                 let canvas_rect = response.rect;
 
-                let scale = 0.065;
+                let scale = 0.05;
                 let main_w = 1920.0;
                 let main_h = 1080.0;
                 let main_x = 0.0;
