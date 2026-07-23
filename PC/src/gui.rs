@@ -714,7 +714,7 @@ pub fn custom_drag_bar<T: emath::Numeric>(
         );
 
         let fill_color = if response.dragged() {
-            ACCENT_HOVER
+            A1
         } else if response.hovered() {
             A1
         } else {
