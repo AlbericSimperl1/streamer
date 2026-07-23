@@ -39,16 +39,16 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
-        Self::with_signal_flag_opt(None)
-    }
+    // pub fn new() -> Self {
+    //     Self::with_signal_flag_opt(None)
+    // }
 
     /// Constructor met een optionele signal flag (gezet door ctrlc handler).
     pub fn with_signal_flag(flag: Arc<AtomicBool>) -> Self {
         Self::with_signal_flag_opt(Some(flag))
     }
 
-    fn with_signal_flag_opt(signal_flag: Option<Arc<AtomicBool>>) -> Self {
+    pub(crate) fn with_signal_flag_opt(signal_flag: Option<Arc<AtomicBool>>) -> Self {
         let mut fps_history = VecDeque::with_capacity(60);
         for _ in 0..60 {
             fps_history.push_back(0.0);

@@ -8,17 +8,21 @@ mod hypr;
 mod types;
 
 fn main() -> Result<(), eframe::Error> {
+    let scale: f32 = 1.5;
+    let w: f32 = 740.0;
+    let h: f32 = 331.0;
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_app_id("hyprland-display-streamer")
-            .with_inner_size([740.0, 331.0])
-            .with_min_inner_size([720.0, 331.0]),
+            .with_inner_size([scale * w, scale * h])
+            .with_min_inner_size([w / scale, h / scale]),
         ..Default::default()
     };
 
     eframe::run_native(
         "Hyprland Virtual Display",
         options,
-        Box::new(|_cc| Ok(Box::new(app::App::new()))),
+        Box::new(|_cc| Ok(Box::new(app::App::new_scaled(_cc, scale)))),
     )
 }
