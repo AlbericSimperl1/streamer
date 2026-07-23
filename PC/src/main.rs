@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![allow(clippy::type_complexity)]
+#![allow(float_literal_f32_fallback)]
+#![allow(deprecated)]
 // #![allow(float_literal_f32_fallback)]
 mod app;
 mod capture;

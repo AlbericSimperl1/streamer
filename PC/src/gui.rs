@@ -108,7 +108,7 @@ impl App {
         ui.painter().rect_filled(rect, 0.0, BG1);
         ui.painter().line_segment(
             [egui::pos2(rect.min.x, rect.max.y), rect.max],
-            egui::Stroke::new(0.5, BRD),
+            egui::Stroke::new(0.5_f32, BRD),
         );
 
         let inner = egui::Rect::from_min_max(
@@ -206,7 +206,7 @@ impl App {
                 egui::pos2(rect.min.x, rect.min.y),
                 egui::pos2(rect.max.x, rect.min.y),
             ],
-            egui::Stroke::new(0.5, BRD),
+            egui::Stroke::new(0.5_f32, BRD),
         );
 
         let inner = egui::Rect::from_min_max(
@@ -298,7 +298,7 @@ impl App {
                         egui::pos2(response.rect.min.x, line_y),
                         egui::pos2(response.rect.max.x, line_y),
                     ],
-                    egui::Stroke::new(0.5, if self.monitor_exists { GRN } else { BRD }),
+                    egui::Stroke::new(0.5_f32, if self.monitor_exists { GRN } else { BRD }),
                 );
             });
             if self.monitor_exists {
@@ -527,7 +527,7 @@ impl App {
 
                 // ── Drawing ──
                 painter.rect_filled(canvas_rect, 0.0, CNV);
-                painter.rect_stroke(canvas_rect, 0.0, egui::Stroke::new(0.5, BRD));
+                painter.rect_stroke(canvas_rect, 0.0, egui::Stroke::new(0.5_f32, BRD));
 
                 let center_x = canvas_rect.center().x;
                 let center_y = canvas_rect.center().y;
@@ -551,7 +551,7 @@ impl App {
                             egui::pos2(grid_x, canvas_rect.min.y),
                             egui::pos2(grid_x, canvas_rect.max.y),
                         ],
-                        egui::Stroke::new(0.5, grid_col),
+                        egui::Stroke::new(0.5_f32, grid_col),
                     );
                     grid_x += grid_step_canvas;
                 }
@@ -565,7 +565,7 @@ impl App {
                             egui::pos2(canvas_rect.min.x, grid_y),
                             egui::pos2(canvas_rect.max.x, grid_y),
                         ],
-                        egui::Stroke::new(0.5, grid_col),
+                        egui::Stroke::new(0.5_f32, grid_col),
                     );
                     grid_y += grid_step_canvas;
                 }
@@ -576,14 +576,14 @@ impl App {
                         egui::pos2(origin_x - 8.0, origin_y),
                         egui::pos2(origin_x + 8.0, origin_y),
                     ],
-                    egui::Stroke::new(1.0, BRD_H),
+                    egui::Stroke::new(1.0_f32, BRD_H),
                 );
                 painter.line_segment(
                     [
                         egui::pos2(origin_x, origin_y - 8.0),
                         egui::pos2(origin_x, origin_y + 8.0),
                     ],
-                    egui::Stroke::new(1.0, BRD_H),
+                    egui::Stroke::new(1.0_f32, BRD_H),
                 );
 
                 // Main monitor
@@ -593,7 +593,7 @@ impl App {
                     egui::vec2(main_w * scale, main_h * scale),
                 );
                 painter.rect_filled(main_rect, 0.0, BG2);
-                painter.rect_stroke(main_rect, 0.0, egui::Stroke::new(1.0, BRD));
+                painter.rect_stroke(main_rect, 0.0, egui::Stroke::new(1.0_f32, BRD));
                 painter.text(
                     main_rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -617,9 +617,9 @@ impl App {
 
                 let is_grabbed = response.dragged();
                 let actual_stroke = if is_grabbed {
-                    egui::Stroke::new(1.5, T0)
+                    egui::Stroke::new(1.5_f32, T0)
                 } else {
-                    egui::Stroke::new(1.0, stroke_col)
+                    egui::Stroke::new(1.0_f32, stroke_col)
                 };
 
                 painter.rect_filled(virt_rect, 0.0, fill_col);
@@ -648,7 +648,7 @@ fn section_header(ui: &mut egui::Ui, title: &str) {
         let cy = line1.center().y;
         ui.painter().line_segment(
             [egui::pos2(line1.min.x, cy), egui::pos2(line1.max.x, cy)],
-            egui::Stroke::new(0.5, BRD),
+            egui::Stroke::new(0.5_f32, BRD),
         );
 
         // Title text
@@ -666,7 +666,7 @@ fn section_header(ui: &mut egui::Ui, title: &str) {
         let cy2 = line2.center().y;
         ui.painter().line_segment(
             [egui::pos2(line2.min.x, cy2), egui::pos2(line2.max.x, cy2)],
-            egui::Stroke::new(0.5, BRD),
+            egui::Stroke::new(0.5_f32, BRD),
         );
     });
     ui.add_space(4.0);
@@ -684,7 +684,7 @@ fn panel_frame() -> egui::Frame {
     egui::Frame {
         fill: BG1,
         inner_margin: egui::Margin::same(8.0),
-        stroke: egui::Stroke::new(0.5, BRD),
+        stroke: egui::Stroke::new(0.5_f32, BRD),
         rounding: egui::Rounding::same(0.0),
         ..Default::default()
     }
@@ -789,15 +789,15 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
 
     // ── FIX: bg_stroke in plaats van border_color ──
     style.visuals.widgets.inactive.bg_fill = BG2;
-    style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, T1);
+    style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, T1);
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
 
     style.visuals.widgets.hovered.bg_fill = BG3;
-    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, T0);
+    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, T0);
     style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
 
     style.visuals.widgets.active.bg_fill = BG3;
-    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, T0);
+    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, T0);
     style.visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
 
     ctx.set_style(style);
@@ -805,7 +805,7 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
 
 // ─── Custom Widgets ─────────────────────────────────────────────
 
-use egui::{emath, Align2, Color32, FontId, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{emath, Align2, Color32, FontId, Response, Sense, Stroke, Ui, Vec2};
 
 /// Flat TUI-style button. `color` determines the accent (ACC, GRN, RED).
 pub fn custom_button(
@@ -838,7 +838,7 @@ pub fn custom_button(
 
         ui.painter().rect_filled(rect, 0.0, bg_col);
         ui.painter()
-            .rect_stroke(rect, 0.0, Stroke::new(0.5, border_col));
+            .rect_stroke(rect, 0.0, Stroke::new(0.5_f32, border_col));
         ui.painter().text(
             rect.center(),
             Align2::CENTER_CENTER,
@@ -895,7 +895,7 @@ pub fn custom_drag_bar<T: emath::Numeric>(
                 egui::pos2(rect.min.x, center_y),
                 egui::pos2(rect.max.x, center_y),
             ],
-            Stroke::new(1.0, BRD),
+            Stroke::new(1.0_f32, BRD),
         );
 
         // Fill (left of handle, accent)
@@ -904,7 +904,7 @@ pub fn custom_drag_bar<T: emath::Numeric>(
                 egui::pos2(rect.min.x, center_y),
                 egui::pos2(handle_x, center_y),
             ],
-            Stroke::new(1.0, if active { ACC } else { ACC_D }),
+            Stroke::new(1.0_f32, if active { ACC } else { ACC_D }),
         );
 
         // Handle (dot)

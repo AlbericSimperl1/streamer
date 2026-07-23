@@ -176,9 +176,31 @@ fn run_capture_loop(
     // Wacht tot de encoder thread alle frames heeft verwerkt
     let _ = feeder.join();
 
+    // ── Close the portal session explicitly before dropping the runtime. ──
+    // RanCapture gebruikt een `new_current_thread` tokio runtime. Bij Drop
+    // van `Session` stuurt zbus GEEN `Close` DBus call — de verbinding wordt
+    // alleen lokaal afgebroken, en de xdg-desktop-portal-session blijft op
+    // de bus staan tot de daemon hem time-out. Dat is exact de oorzaak van
+    // "ik kan de stream maar één keer openen": bij de tweede `open_screencast`
+    // reageert de portal daemon meteen op de nieuwe request, maar de oude
+    // PipeWire remote die bij de eerste sessie hoort is nog niet vrijgegeven
+    // → de nieuwe `start` call hangt of de nieuwe stream loopt vast bij het
+    // finaliseren.
+    //
+    // Door `Session::close()` expliciet op de nog levende runtime te draaien
+    // sturen we de `org.freedesktop.portal.Session.Close` DBus method-call,
+    // waarna de portal-daemon de PipeWire node direct opkuist.
+    log::info!("portal: closing session before drop");
+    if let Err(e) = rt.block_on(handle.session.close()) {
+        log::warn!("portal: Session::close failed (continuing): {e}");
+    }
+    log::info!("portal: session closed");
+
     set_status(&status, CaptureStatus::Idle);
-    // `handle`, `session` en `rt` worden hier automatisch gedropt.
-    // De DBus-socket sluit netjes af en geeft de portal-daemon direct het signaal.
+    // `handle` (fd, session) en `rt` worden hier automatisch gedropt,
+    // in omgekeerde declaratie-volgorde: eerst `handle`, dan `rt`.
+    // De `Connection`-drop breekt de socket maar stuurt geen verdere DBus,
+    // dus dat is veilig.
 }
 
 /// Runs entirely on the capture thread.
