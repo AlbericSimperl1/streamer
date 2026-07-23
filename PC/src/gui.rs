@@ -11,12 +11,12 @@ const DANGER_HOVER: egui::Color32 = egui::Color32::from_rgb(248, 113, 113);
 
 // mijn kleuren
 /// panels enzo
-const C1: egui::Color32 = egui::Color32::from_rgba_premultiplied(4, 6, 10, 5);
-const C2: egui::Color32 = egui::Color32::from_rgb(33, 35, 39); // panels
-const C3: egui::Color32 = egui::Color32::from_rgb(23, 25, 29); // input fields
-const C4: egui::Color32 = egui::Color32::from_rgb(84, 86, 90); // borders
-const C2_HOVER: egui::Color32 = egui::Color32::from_rgb(48, 51, 57); // Net iets lichter dan C2
-const C2_CLICKED: egui::Color32 = egui::Color32::from_rgb(68, 72, 80); // Net iets lichter dan C2_HOVER
+const BG: egui::Color32 = egui::Color32::from_rgba_premultiplied(4, 6, 10, 5); // background
+const PNL: egui::Color32 = egui::Color32::from_rgb(33, 35, 39); // panels
+const PNL_H: egui::Color32 = egui::Color32::from_rgb(48, 51, 57); // Net iets lichter dan PNL
+const PNL_C: egui::Color32 = egui::Color32::from_rgb(68, 72, 80); // Net iets lichter dan PNL_H
+const CNV: egui::Color32 = egui::Color32::from_rgb(23, 25, 29); // input fields
+const BRD: egui::Color32 = egui::Color32::from_rgb(84, 86, 90); // borders
 
 /// text
 const T0: egui::Color32 = egui::Color32::from_rgb(255, 255, 255); // "titels"
@@ -69,7 +69,7 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
-                    .fill(C1)
+                    .fill(BG)
                     .inner_margin(egui::Margin::symmetric(1.5, 1.5)),
             )
             .show(ctx, |ui| {
@@ -136,7 +136,7 @@ impl App {
             .num_columns(2)
             .spacing([12.0, 8.0])
             .show(ui, |ui| {
-                // ─── 1. Identifier (Achtergrond C2 met dunne onderlijn) ───
+                // ─── 1. Identifier (Achtergrond PNL met dunne onderlijn) ───
                 ui.label(egui::RichText::new("identifier :").color(T1).monospace());
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(!self.monitor_exists, |ui| {
@@ -152,7 +152,7 @@ impl App {
                                 egui::pos2(response.rect.min.x, line_y),
                                 egui::pos2(response.rect.max.x, line_y),
                             ],
-                            egui::Stroke::new(1.0, C4),
+                            egui::Stroke::new(1.0, BRD),
                         );
                     });
                     if self.monitor_exists {
@@ -405,8 +405,8 @@ impl App {
                 }
 
                 // Teken logica
-                painter.rect_filled(canvas_rect, 2.0, C3);
-                painter.rect_stroke(canvas_rect, 2.0, egui::Stroke::new(0.0, C4));
+                painter.rect_filled(canvas_rect, 2.0, CNV);
+                painter.rect_stroke(canvas_rect, 2.0, egui::Stroke::new(0.0, BRD));
 
                 let center_x = canvas_rect.center().x;
                 let center_y = canvas_rect.center().y;
@@ -458,7 +458,7 @@ impl App {
                 );
 
                 painter.rect_filled(main_rect, 2.0, egui::Color32::from_rgb(40, 40, 38));
-                painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(3.0, C4));
+                painter.rect_stroke(main_rect, 2.0, egui::Stroke::new(3.0, BRD));
                 painter.text(
                     main_rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -552,14 +552,14 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
     style.visuals.widgets.active.rounding = rounding;
 
     style.visuals.dark_mode = true;
-    style.visuals.code_bg_color = C3;
+    style.visuals.code_bg_color = CNV;
     style.visuals.override_text_color = Some(T1);
 
-    style.visuals.widgets.inactive.bg_fill = C3;
+    style.visuals.widgets.inactive.bg_fill = CNV;
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, T1);
-    style.visuals.widgets.hovered.bg_fill = C3;
+    style.visuals.widgets.hovered.bg_fill = CNV;
     style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, T0);
-    style.visuals.widgets.active.bg_fill = C3;
+    style.visuals.widgets.active.bg_fill = CNV;
     style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, T0);
 
     ctx.set_style(style);
@@ -567,18 +567,18 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
 
 fn panel_frame() -> egui::Frame {
     egui::Frame {
-        fill: C2,
+        fill: PNL,
         inner_margin: egui::Margin::same(3.0),
-        stroke: egui::Stroke::new(1.0, C4),
+        stroke: egui::Stroke::new(1.0, BRD),
         ..Default::default()
     }
 }
 
 fn inner_frame() -> egui::Frame {
     egui::Frame {
-        fill: C3,
+        fill: CNV,
         inner_margin: egui::Margin::same(8.0),
-        stroke: egui::Stroke::new(1.0, C4),
+        stroke: egui::Stroke::new(1.0, BRD),
         ..Default::default()
     }
 }
@@ -628,16 +628,16 @@ pub fn custom_button(
     if ui.is_rect_visible(rect) {
         // Bepaal de achtergrond-, rand- en tekstkleur op basis van de staat
         let (bg_col, border_col, text_col) = if !enabled {
-            (C2, C4, T2)
+            (PNL, BRD, T2)
         } else if response.is_pointer_button_down_on() {
             // 1. Ingedrukt / Clicked staat (Lichtst)
-            (C2_CLICKED, C4, T0)
+            (PNL_C, BRD, T0)
         } else if response.hovered() {
             // 2. Muis zweeft erboven / Hover staat (Middel)
-            (C2_HOVER, C4, T0)
+            (PNL_H, BRD, T0)
         } else {
             // 3. Ruststand / Normal staat
-            (C2, C4, T1)
+            (PNL, BRD, T1)
         };
 
         // Teken achtergrond en rand
@@ -702,9 +702,9 @@ pub fn custom_drag_bar<T: emath::Numeric>(
             pos2(rect.min.x, center_y - track_h / 2.0),
             pos2(rect.max.x, center_y + track_h / 2.0),
         );
-        ui.painter().rect_filled(track_rect, 2.0, C3);
+        ui.painter().rect_filled(track_rect, 2.0, CNV);
         ui.painter()
-            .rect_stroke(track_rect, 2.0, Stroke::new(0.5, C4));
+            .rect_stroke(track_rect, 2.0, Stroke::new(0.5, BRD));
 
         // Active Progress Fill (Accent-kleur voortgang)
         let fill_w = (rect.width() * normalized).max(0.0);
