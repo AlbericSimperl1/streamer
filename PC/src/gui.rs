@@ -129,17 +129,122 @@ impl App {
     }
 
     /// Configuratie Grid (Identifier, Width, Height, FPS, Scale, Status)
+    // fn render_config(&mut self, ui: &mut egui::Ui) {
+    //     ui.spacing_mut().interact_size.y = 4.0;
+
+    //     // slider_width bepaalt de totale horizontale lengte van de slider (standaard is 100.0)
+    //     ui.spacing_mut().slider_width = 90.0;
+    //     ui.spacing_mut().slider_rail_height = 4.0;
+
+    //     egui::Grid::new("config_grid")
+    //         .num_columns(2)
+    //         .spacing([12.0, 10.0])
+    //         .show(ui, |ui| {
+    //             // ─── 1. Identifier (Achtergrond C2 met enkel een onderlijn) ───
+    //             ui.label(egui::RichText::new("identifier :").color(T1).monospace());
+    //             ui.horizontal(|ui| {
+    //                 ui.add_enabled_ui(!self.monitor_exists, |ui| {
+    //                     // frame(false) haalt de standaard achtergrond & randen weg (waardoor C2 zichtbaar blijft)
+    //                     let response = ui.add(
+    //                         egui::TextEdit::singleline(&mut self.config.name)
+    //                             .desired_width(110.0)
+    //                             .frame(false),
+    //                     );
+
+    //                     // Teken handmatig de dunne onderlijn onder het veld
+    //                     let line_y = response.rect.bottom();
+    //                     ui.painter().line_segment(
+    //                         [
+    //                             egui::pos2(response.rect.min.x, line_y),
+    //                             egui::pos2(response.rect.max.x, line_y),
+    //                         ],
+    //                         egui::Stroke::new(1.0, C4),
+    //                     );
+    //                 });
+    //                 if self.monitor_exists {
+    //                     ui.label(egui::RichText::new("✓").color(T0).monospace());
+    //                 }
+    //             });
+    //             ui.end_row();
+
+    //             // ─── 2. Width (Diskrete Slider: stappen van 30, max 3840) ───
+    //             ui.label(egui::RichText::new("width :").color(T1).monospace());
+    //             ui.add(
+    //                 egui::Slider::new(&mut self.config.width, 300..=3840)
+    //                     .step_by(30.0)
+    //                     .suffix(" px"),
+    //             );
+    //             ui.end_row();
+
+    //             // ─── 3. Height (Diskrete Slider: stappen van 30, max 3840) ───
+    //             ui.label(egui::RichText::new("height :").color(T1).monospace());
+    //             ui.add(
+    //                 egui::Slider::new(&mut self.config.height, 300..=3840)
+    //                     .step_by(30.0)
+    //                     .suffix(" px"),
+    //             );
+    //             ui.end_row();
+
+    //             // ─── 4. Frame Rate (Integer Slider: max 90 Hz) ───
+    //             ui.label(egui::RichText::new("frame rate :").color(T1).monospace());
+    //             ui.add(
+    //                 egui::Slider::new(&mut self.config.fps, 1..=90)
+    //                     .step_by(1.0)
+    //                     .suffix(" Hz"),
+    //             );
+    //             ui.end_row();
+
+    //             // ─── 5. Scale (Float Slider: stappen van 0.05, max 4.0) ───
+    //             ui.label(egui::RichText::new("scale :").color(T1).monospace());
+    //             ui.add(egui::Slider::new(&mut self.config.scale, 0.5f32..=4.0f32).step_by(0.05));
+
+    //             // ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    //             //     let capturing = self.is_capturing();
+    //             //     let (status_text, color) = if capturing {
+    //             //         ("● STREAMING", A1)
+    //             //     } else if self.is_stopping() {
+    //             //         ("⏳ STOPPING", DANGER_RED)
+    //             //     } else if self.monitor_exists {
+    //             //         ("● ONLINE", T1)
+    //             //     } else {
+    //             //         ("○ OFFLINE", T2)
+    //             //     };
+
+    //             //     ui.label(
+    //             //         egui::RichText::new(status_text)
+    //             //             .color(color)
+    //             //             .size(12.0)
+    //             //             .monospace()
+    //             //             .strong(),
+    //             //     );
+    //             // });
+    //             // ui.end_row();
+    //         });
+    // }
+
+    /// Configuratie Grid (Identifier, Width, Height, FPS, Scale, Status)
     fn render_config(&mut self, ui: &mut egui::Ui) {
         egui::Grid::new("config_grid")
             .num_columns(2)
-            .spacing([12.0, 10.0])
+            .spacing([12.0, 8.0])
             .show(ui, |ui| {
-                // Identifier
+                // ─── 1. Identifier (Achtergrond C2 met dunne onderlijn) ───
                 ui.label(egui::RichText::new("identifier :").color(T1).monospace());
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(!self.monitor_exists, |ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.config.name).desired_width(110.0),
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut self.config.name)
+                                .desired_width(110.0)
+                                .frame(false),
+                        );
+
+                        let line_y = response.rect.bottom();
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(response.rect.min.x, line_y),
+                                egui::pos2(response.rect.max.x, line_y),
+                            ],
+                            egui::Stroke::new(1.0, C4),
                         );
                     });
                     if self.monitor_exists {
@@ -148,59 +253,60 @@ impl App {
                 });
                 ui.end_row();
 
-                // Width
+                // ─── 2. Width (Discreet per 30px, max 3840) ───
                 ui.label(egui::RichText::new("width :").color(T1).monospace());
-                ui.add(
-                    egui::DragValue::new(&mut self.config.width)
-                        .range(320..=7680)
-                        .suffix(" px"),
-                );
-                ui.end_row();
-
-                // Height
-                ui.label(egui::RichText::new("height :").color(T1).monospace());
-                ui.add(
-                    egui::DragValue::new(&mut self.config.height)
-                        .range(320..=7680)
-                        .suffix(" px"),
-                );
-                ui.end_row();
-
-                // Frame Rate
-                ui.label(egui::RichText::new("frame rate :").color(T1).monospace());
-                ui.add(
-                    egui::DragValue::new(&mut self.config.fps)
-                        .range(1..=240)
-                        .suffix(" Hz"),
-                );
-                ui.end_row();
-
-                // Scale
-                ui.label(egui::RichText::new("scale :").color(T1).monospace());
-                ui.add(
-                    egui::DragValue::new(&mut self.config.scale)
-                        .range(0.5f32..=3.0f32)
-                        .speed(0.1),
-                );
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let capturing = self.is_capturing();
-                    let (status_text, color) = if capturing {
-                        ("● STREAMING", A1)
-                    } else if self.is_stopping() {
-                        ("⏳ STOPPING", DANGER_RED)
-                    } else if self.monitor_exists {
-                        ("● ONLINE", T1)
-                    } else {
-                        ("○ OFFLINE", T2)
-                    };
-
+                ui.horizontal(|ui| {
+                    custom_drag_bar(ui, &mut self.config.width, 300..=3840, Some(30.0), 100.0);
                     ui.label(
-                        egui::RichText::new(status_text)
-                            .color(color)
-                            .size(12.0)
+                        egui::RichText::new(format!("{} px", self.config.width))
+                            .color(T1)
                             .monospace()
-                            .strong(),
+                            .size(12.0),
+                    );
+                });
+                ui.end_row();
+
+                // ─── 3. Height (Discreet per 30px, max 3840) ───
+                ui.label(egui::RichText::new("height :").color(T1).monospace());
+                ui.horizontal(|ui| {
+                    custom_drag_bar(ui, &mut self.config.height, 300..=3840, Some(30.0), 100.0);
+                    ui.label(
+                        egui::RichText::new(format!("{} px", self.config.height))
+                            .color(T1)
+                            .monospace()
+                            .size(12.0),
+                    );
+                });
+                ui.end_row();
+
+                // ─── 4. Frame Rate (Discreet per integer, max 90 Hz) ───
+                ui.label(egui::RichText::new("frame rate :").color(T1).monospace());
+                ui.horizontal(|ui| {
+                    custom_drag_bar(ui, &mut self.config.fps, 1..=90, Some(1.0), 100.0);
+                    ui.label(
+                        egui::RichText::new(format!("{} Hz", self.config.fps))
+                            .color(T1)
+                            .monospace()
+                            .size(12.0),
+                    );
+                });
+                ui.end_row();
+
+                // ─── 5. Scale (Discreet per 0.05, max 4.0) ───
+                ui.label(egui::RichText::new("scale :").color(T1).monospace());
+                ui.horizontal(|ui| {
+                    custom_drag_bar(
+                        ui,
+                        &mut self.config.scale,
+                        0.5f32..=4.0f32,
+                        Some(0.05),
+                        100.0,
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("{:.2}", self.config.scale))
+                            .color(T1)
+                            .monospace()
+                            .size(12.0),
                     );
                 });
                 ui.end_row();
@@ -215,7 +321,7 @@ impl App {
         let can_start = self.monitor_exists && !self.is_capturing() && !stopping;
         let can_stop = self.is_capturing() && !stopping;
 
-        let btn_width = (292.0 - 4.0) / 2.0;
+        let btn_width = (272.0 - 4.0) / 2.0;
 
         ui.horizontal(|ui| {
             // Button 1: Create / Update
@@ -494,10 +600,36 @@ impl App {
 // ─── Styling Helpers ───────────────────────────────────────────
 
 fn configure_style(ctx: &egui::Context, scale: f32) {
-    // Stel de schaalfactor globally in (1.25 = 125% van normale grootte)
-    // let scale = 1.25;
+    // 1. Schaal instellen
     ctx.set_pixels_per_point(scale);
 
+    // 2. Globaal Font Laden en Configureren
+    let mut fonts = egui::FontDefinitions::default();
+
+    // Laad het .ttf of .otf bestand (pas het pad aan naar jouw font-bestand)
+    fonts.font_data.insert(
+        "custom_font".to_owned(),
+        egui::FontData::from_static(include_bytes!("/usr/share/fonts/mononoki-Regular.ttf")),
+    );
+
+    // Zet het font als hoogste prioriteit voor Proportional (normale tekst)
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "custom_font".to_owned());
+
+    // Zet het font OOK als hoogste prioriteit voor Monospace (zodat .monospace() in je UI hetzelfde font gebruikt)
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "custom_font".to_owned());
+
+    // Pas de fontdefinities toe op de context
+    ctx.set_fonts(fonts);
+
+    // 3. Overige Styling & Visuals
     let mut style = (*ctx.style()).clone();
 
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
@@ -608,6 +740,89 @@ pub fn custom_button(
             FontId::monospace(13.0),
             text_col,
         );
+    }
+
+    response
+}
+
+use egui::{emath, pos2, vec2, Rect};
+
+/// Tekent een minimalistische custom drag bar / slider in OmaTunes-stijl.
+pub fn custom_drag_bar<T: emath::Numeric>(
+    ui: &mut Ui,
+    value: &mut T,
+    range: std::ops::RangeInclusive<T>,
+    step: Option<f64>,
+    width: f32,
+) -> Response {
+    let height = 22.0; // Totale interactieve hoogte
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
+
+    let min = range.start().to_f64();
+    let max = range.end().to_f64();
+
+    // ─── 1. Muis & Drag Logica ─────────────────────────────────────
+    if response.dragged() || response.clicked() {
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
+            let normalized = ((pointer_pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
+            let raw_val = min + (normalized as f64) * (max - min);
+
+            let new_val = if let Some(s) = step {
+                ((raw_val - min) / s).round() * s + min
+            } else {
+                raw_val
+            };
+
+            *value = T::from_f64(new_val.clamp(min, max));
+        }
+    }
+
+    // ─── 2. Rendering met Painter ──────────────────────────────────
+    if ui.is_rect_visible(rect) {
+        let current_val = value.to_f64();
+        let normalized = ((current_val - min) / (max - min)).clamp(0.0, 1.0) as f32;
+        let center_y = rect.center().y;
+
+        // Background Track (donker spoor met dunne rand)
+        let track_h = 4.0;
+        let track_rect = Rect::from_min_max(
+            pos2(rect.min.x, center_y - track_h / 2.0),
+            pos2(rect.max.x, center_y + track_h / 2.0),
+        );
+        ui.painter().rect_filled(track_rect, 2.0, C3);
+        ui.painter()
+            .rect_stroke(track_rect, 2.0, Stroke::new(0.5, C4));
+
+        // Active Progress Fill (Accent-kleur voortgang)
+        let fill_w = (rect.width() * normalized).max(0.0);
+        let filled_rect = Rect::from_min_max(
+            pos2(rect.min.x, center_y - track_h / 2.0),
+            pos2(rect.min.x + fill_w, center_y + track_h / 2.0),
+        );
+
+        let fill_color = if response.dragged() {
+            ACCENT_HOVER
+        } else if response.hovered() {
+            A1
+        } else {
+            A2
+        };
+        ui.painter().rect_filled(filled_rect, 2.0, fill_color);
+
+        // Handle / Thumb (Dunne verticale pill die opschaalt en oplicht bij hover/drag)
+        let handle_x = rect.min.x + fill_w;
+        let handle_size = if response.hovered() || response.dragged() {
+            vec2(6.0, 14.0)
+        } else {
+            vec2(4.0, 10.0)
+        };
+        let handle_rect = Rect::from_center_size(pos2(handle_x, center_y), handle_size);
+        let handle_color = if response.hovered() || response.dragged() {
+            T0
+        } else {
+            A1
+        };
+        ui.painter().rect_filled(handle_rect, 2.0, handle_color);
     }
 
     response
