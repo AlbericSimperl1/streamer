@@ -101,7 +101,7 @@ impl eframe::App for App {
 
 impl App {
     // ── Top status bar ──
-    fn render_top_bar(&self, ui: &mut egui::Ui) {
+    fn render_top_bar(&mut self, ui: &mut egui::Ui) {
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::hover());
 
@@ -172,6 +172,30 @@ impl App {
                     .monospace()
                     .size(11.0),
                 );
+
+                // reset to 1440x1080@60
+                // let reset_btn = egui::Button::new("↺").small();
+
+                // if ui
+                //     .add(reset_btn)
+                //     .on_hover_text("Reset naar 1440x1080 @ 60 Hz")
+                //     .clicked()
+                // {
+                //     self.config.width = 1440;
+                //     self.config.height = 1080;
+                //     self.config.fps = 60;
+                //     self.config.scale = 1.0; // Als je de schaalvergroting ook wilt resetten
+                // }
+                ui.add_space(8.0); // Iets meer ruimte ervoor
+                if custom_icon_button(ui, "↺", ACC)
+                    .on_hover_text("Reset naar 1440x1080 @ 60 Hz")
+                    .clicked()
+                {
+                    self.config.width = 1440;
+                    self.config.height = 1080;
+                    self.config.fps = 60;
+                    self.config.scale = 1.0; // Als je de schaalvergroting ook wilt resetten
+                }
 
                 // Right-aligned capture status
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -913,6 +937,35 @@ pub fn custom_drag_bar<T: emath::Numeric>(
             egui::pos2(handle_x, center_y),
             handle_r,
             if active { T0 } else { ACC },
+        );
+    }
+
+    response
+}
+
+/// Kleine TUI-style icoon knop (alleen tekst die van kleur verandert).
+pub fn custom_icon_button(ui: &mut Ui, icon: &str, color: Color32) -> Response {
+    let desired_size = Vec2::new(16.0, 16.0);
+    let (rect, response) = ui.allocate_exact_size(desired_size, Sense::click());
+
+    if ui.is_rect_visible(rect) {
+        // Bepaal kleur op basis van interactie
+        let text_col = if !response.enabled() {
+            T3
+        } else if response.is_pointer_button_down_on() {
+            T0 // Ingedrukt
+        } else if response.hovered() {
+            color // Hover (accentkleur)
+        } else {
+            T2 // Ruststand (dim grijs)
+        };
+
+        ui.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            icon,
+            FontId::monospace(12.0),
+            text_col,
         );
     }
 

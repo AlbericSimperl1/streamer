@@ -1584,6 +1584,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
+name = "hyprStream"
+version = "0.1.0"
+dependencies = [
+ "ashpd",
+ "chrono",
+ "ctrlc",
+ "eframe",
+ "egui",
+ "image",
+ "log",
+ "pipewire",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1740,23 +1757,6 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
-]
-
-[[package]]
-name = "ipad-display"
-version = "0.1.0"
-dependencies = [
- "ashpd",
- "chrono",
- "ctrlc",
- "eframe",
- "egui",
- "image",
- "log",
- "pipewire",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
