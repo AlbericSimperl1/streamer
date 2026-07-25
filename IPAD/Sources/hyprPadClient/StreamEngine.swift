@@ -43,7 +43,7 @@ class StreamEngine: ObservableObject, @unchecked Sendable {
             }
 
         // 4. Verpak ze in de C struct
-        let callbacks = HyprpadCallbacks(on_nalu: onNalu, on_log: onLog)
+        let callbacks = HyprpadCallbacks(on_nalu: onNalu)
 
         // 5. Start de Rust Engine op poort 5000!
         let success = hyprpad_start(5000, callbacks, nil)

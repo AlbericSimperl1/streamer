@@ -2,11 +2,16 @@ use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use super::packetizer::Packetizer;
+
 /// Owns a running `ffmpeg -i - … out.mp4` process
 pub struct Encoder {
     child: Child,
     width: u32,
     height: u32,
+    /// Houdt de packetizer-thread in leven zolang de encoder leeft. Wordt
+    /// gedropt (en dus gestopt) samen met de Encoder.
+    _packetizer: Packetizer,
 }
 
 impl Encoder {
@@ -27,7 +32,9 @@ impl Encoder {
         let size = format!("{width}x{height}");
         let rate = format!("{fps}");
         let gop = format!("{fps}");
-        let ipad_udp_url = "udp://192.168.0.119:5000?pkt_size=1316";
+        // Bestemming voor onze EIGEN gesequenced UDP-verzending (Packetizer),
+        // niet meer voor ffmpeg zelf. Zelfde host:poort als voorheen.
+        let ipad_dest = "192.168.0.119:5000";
 
         let mut child = Command::new("ffmpeg")
             .args([
@@ -43,41 +50,45 @@ impl Encoder {
                 &rate,
                 "-i",
                 "-",
-                // --- ENCODER: match the working standalone command ---
+                // --- ENCODER ---
                 "-c:v",
                 "libx264",
                 "-preset",
                 "ultrafast",
                 "-tune",
                 "zerolatency",
-                // bgr0 must be converted to yuv420p for H.264 compatibility.
-                // (testsrc in the standalone command already outputs yuv420p,
-                //  so it doesn't need this flag — we do.)
                 "-pix_fmt",
                 "yuv420p",
                 "-g",
                 &gop,
                 "-keyint_min",
                 &gop,
-                // --- OUTPUT: single MPEG-TS over UDP, must be last arg ---
+                // --- OUTPUT: rauwe Annex-B H.264 stream naar stdout. ---
+                // GEEN mpegts meer: de iPad-parser verwacht een kale
+                // elementary stream, geen TS-verpakking. Wij doen zelf de
+                // UDP-verzending (met sequence-nummers) via de Packetizer.
                 "-f",
                 "h264",
-                ipad_udp_url,
+                "-",
             ])
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| e.to_string())?;
 
-        // Sanity: ffmpeg may exit instantly if the path is bad. Read stderr
-        // lazily; we only inspect it on finalize failure.
-        let _ = child.stderr.take();
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "ffmpeg stdout kon niet genomen worden".to_string())?;
+
+        let packetizer = Packetizer::start(stdout, ipad_dest.to_string());
 
         Ok(Self {
             child,
             width,
             height,
+            _packetizer: packetizer,
         })
     }
 
