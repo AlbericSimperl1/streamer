@@ -61,7 +61,7 @@ impl Encoder {
                 &gop,
                 // --- OUTPUT: single MPEG-TS over UDP, must be last arg ---
                 "-f",
-                "mpegts",
+                "h264",
                 ipad_udp_url,
             ])
             .stdin(Stdio::piped())
