@@ -27,3 +27,4 @@ PC/rust_core/Cargo.lock
 # Generic Fallbacks (pakt target/ en .build/ overal in het project)
 **/target/
 **/.build/
+/.zed/
