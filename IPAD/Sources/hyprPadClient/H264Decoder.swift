@@ -49,25 +49,6 @@ final class H264Decoder: ObservableObject, @unchecked Sendable {
         }
     }
 
-    // MARK: - Intern (op `h264.decode` queue)
-
-    // private func handle(_ nalu: Data, nalType: UInt8) {
-    //     switch nalType {
-    //     case 7: // SPS
-    //         lock.withLock { $0.sps = nalu }
-    //         rebuildFormatDescription()
-    //     case 8: // PPS
-    //         lock.withLock { $0.pps = nalu }
-    //         rebuildFormatDescription()
-    //     case 5: // IDR
-    //         enqueueFrame(nalu, isIDR: true)
-    //     case 1: // non-IDR (P-frame)
-    //         enqueueFrame(nalu, isIDR: false)
-    //     default:
-    //         break
-    //     }
-    // }
-
     private func handle(_ nalu: Data, nalType: UInt8) {
         switch nalType {
         case 7:  // SPS
@@ -154,11 +135,9 @@ final class H264Decoder: ObservableObject, @unchecked Sendable {
         // 1. Haal de huidige formatDescription op onder lock.
         let fmt: CMVideoFormatDescription? = lock.withLock { $0.formatDescription }
         guard let formatDescription = fmt else {
-            onStatusUpdate?("⚠️ Frame gedropt: SPS/PPS mist nog!")
             return
         }
 
-        NSLog("🎬 Frame decoderen... IDR: \(isIDR), Size: \(naluPayload.count)")
         // ... de rest van je enqueueFrame code ...
 
         // 2. Bouw AVCC-payload: 4-byte big-endian length prefix + NAL bytes.
@@ -232,9 +211,7 @@ final class H264Decoder: ObservableObject, @unchecked Sendable {
             r.enqueue(sBuf)
 
             // Laat ons weten of hij daadwerkelijk frames accepteert!
-            self.onStatusUpdate?(
-                "🎬 Frame naar scherm gestuurd! (Queue: \(r.status == .rendering ? "Actief" : "Wacht"))"
-            )
+
         }
     }
 
