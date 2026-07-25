@@ -204,6 +204,41 @@ struct UnitRange {
     sc_len: usize,
 }
 
+// fn emit<F>(data: &[u8], unit: &UnitRange, on_nalu: &mut F, frame_count: &mut u32)
+// where
+//     F: FnMut(*const u8, u32, u8),
+// {
+//     if unit.end <= unit.start {
+//         return;
+//     }
+//     let raw = &data[unit.start..unit.end];
+//     let nal_type = raw.first().copied().unwrap_or(0) & 0x1F;
+
+//     // Strip emulation prevention bytes (00 00 03 → 00 00). Dit is essentieel
+//     // voor correcte SPS/PPS-parsing door VideoToolbox.
+//     // let stripped = strip_epb(raw);
+
+//     // if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
+//     //     *frame_count += 1;
+//     // }
+
+//     // // We parsen de resolutie (SPS) hier niet meer in Rust.
+//     // // VideoToolbox in Swift leest de SPS zelf uit en bepaalt perfect de
+//     // // 1200x900 resolutie. Dit voorkomt de "16x96" bugs in het HUD.
+
+//     // on_nalu(stripped.as_ptr(), stripped.len() as u32, nal_type);
+
+//     // NICHT STRIPPEN! VideoToolbox verwacht de Emulation Prevention Bytes.
+
+//     if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
+//         *frame_count += 1;
+//     }
+
+//     // Stuur de ruwe NAL unit (zonder startcode) naar Swift.
+//     on_nalu(raw.as_ptr(), raw.len() as u32, nal_type);
+// }
+
+// Vervang de code in de emit functie door dit:
 fn emit<F>(data: &[u8], unit: &UnitRange, on_nalu: &mut F, frame_count: &mut u32)
 where
     F: FnMut(*const u8, u32, u8),
@@ -214,30 +249,16 @@ where
     let raw = &data[unit.start..unit.end];
     let nal_type = raw.first().copied().unwrap_or(0) & 0x1F;
 
-    // Strip emulation prevention bytes (00 00 03 → 00 00). Dit is essentieel
-    // voor correcte SPS/PPS-parsing door VideoToolbox.
-    // let stripped = strip_epb(raw);
-
-    // if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
-    //     *frame_count += 1;
-    // }
-
-    // // We parsen de resolutie (SPS) hier niet meer in Rust.
-    // // VideoToolbox in Swift leest de SPS zelf uit en bepaalt perfect de
-    // // 1200x900 resolutie. Dit voorkomt de "16x96" bugs in het HUD.
-
-    // on_nalu(stripped.as_ptr(), stripped.len() as u32, nal_type);
-
-    // NICHT STRIPPEN! VideoToolbox verwacht de Emulation Prevention Bytes.
+    // STRIP de EPB bytes! Dit is essentieel voor VideoToolbox.
+    let stripped = strip_epb(raw);
 
     if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
         *frame_count += 1;
     }
 
-    // Stuur de ruwe NAL unit (zonder startcode) naar Swift.
-    on_nalu(raw.as_ptr(), raw.len() as u32, nal_type);
+    // Stuur de gestripte NAL unit naar Swift.
+    on_nalu(stripped.as_ptr(), stripped.len() as u32, nal_type);
 }
-
 /// Verwijder emulation prevention bytes: `00 00 03` → `00 00`.
 /// De trailing byte (`xx` in `00 00 03 xx`) blijft behouden.
 fn strip_epb(input: &[u8]) -> Vec<u8> {
