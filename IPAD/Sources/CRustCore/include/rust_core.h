@@ -27,24 +27,14 @@
  * NALU-callback. Wordt aangeroepen op de `nalu-parser` thread (background).
  * De pointer is enkel geldig tijdens de call — kopieer de bytes in Swift.
  */
-typedef void (*OnNalu)(const uint8_t *data, uint32_t len, uint8_t nal_type,
-                       void *ctx);
-
-// /**
-//  * Log-callback. `level`: 0=info, 1=warn, 2=error. Swift moet altijd een
-//  geldige
-//  * functie meegeven (geen `Option`) — cbindgen vertaalt `Option<fn>` namelijk
-//  * niet naar een C-function-pointer.
-//  */
-// typedef void (*OnLog)(uint8_t level, const char *msg, void *ctx);
+typedef void (*OnNalu)(const uint8_t *data, uint32_t len, uint8_t nal_type, void *ctx);
 
 /**
  * Callbacks die Swift meegeeft. Eén struct = geen volgorderisico's.
  * Beide velden zijn verplicht (geen NULL).
  */
 typedef struct {
-  OnNalu on_nalu;
-  // OnLog on_log;
+    OnNalu on_nalu;
 } HyprpadCallbacks;
 
 /**
@@ -53,11 +43,11 @@ typedef struct {
  * 3=error.
  */
 typedef struct {
-  uint32_t fps;
-  uint64_t bytes_total;
-  uint32_t width;
-  uint32_t height;
-  uint8_t state;
+    uint32_t fps;
+    uint64_t bytes_total;
+    uint32_t width;
+    uint32_t height;
+    uint8_t state;
 } HyprpadStats;
 
 /**
@@ -75,9 +65,8 @@ bool hyprpad_start(uint16_t port, HyprpadCallbacks callbacks, void *ctx);
 void hyprpad_stop(void);
 
 /**
- * Poll de stats. Veilig om vanaf elke thread (incl. main) aangeroepen te
- * worden.
+ * Poll de stats. Veilig om vanaf elke thread (incl. main) aangeroepen te worden.
  */
 HyprpadStats hyprpad_stats(void);
 
-#endif /* RUST_CORE_H */
+#endif  /* RUST_CORE_H */

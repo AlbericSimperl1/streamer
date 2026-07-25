@@ -36,7 +36,6 @@ pub type OnLog = extern "C" fn(level: u8, msg: *const c_char, ctx: *mut c_void);
 #[repr(C)]
 pub struct HyprpadCallbacks {
     pub on_nalu: OnNalu,
-    pub on_log: OnLog,
 }
 
 /// State van de engine, opgevraagd via `hyprpad_stats()`.
@@ -112,11 +111,11 @@ pub unsafe extern "C" fn hyprpad_start(
     let ctx_u = ctx_to_usize(ctx);
 
     // Log-wrapper: formateer &str naar C-string.
-    let log_cb = callbacks.on_log;
+    // let log_cb = callbacks.on_log;
     let log_ctx_u = ctx_u;
     let logger: Box<dyn FnMut(u8, &str) + Send> = Box::new(move |level: u8, msg: &str| {
         let c = std::ffi::CString::new(msg).unwrap_or_default();
-        log_cb(level, c.as_ptr(), usize_to_ctx(log_ctx_u));
+        // log_cb(level, c.as_ptr(), usize_to_ctx(log_ctx_u));
     });
 
     // UDP receiver.
@@ -124,7 +123,7 @@ pub unsafe extern "C" fn hyprpad_start(
         Ok(u) => u,
         Err(e) => {
             let msg = std::ffi::CString::new(format!("UDP bind fout: {e}")).unwrap_or_default();
-            log_cb(2, msg.as_ptr(), usize_to_ctx(ctx_u));
+            // log_cb(2, msg.as_ptr(), usize_to_ctx(ctx_u));
             return false;
         }
     };
@@ -133,13 +132,9 @@ pub unsafe extern "C" fn hyprpad_start(
     let nalu_cb = callbacks.on_nalu;
     let nalu_ctx_u = ctx_u;
     let stats_for_parser = stats.clone();
-    let parser = parser::NaluParser::start(
-        ring,
-        stats_for_parser,
-        move |data, len, nal_type| {
-            nalu_cb(data, len, nal_type, usize_to_ctx(nalu_ctx_u));
-        },
-    );
+    let parser = parser::NaluParser::start(ring, stats_for_parser, move |data, len, nal_type| {
+        nalu_cb(data, len, nal_type, usize_to_ctx(nalu_ctx_u));
+    });
 
     engine.udp = Some(udp);
     engine.parser = Some(parser);

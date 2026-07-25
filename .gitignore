@@ -16,6 +16,8 @@ IPAD/.swiftpm/configuration/registries.json
 IPAD/.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 IPAD/xtool/
 IPAD/Sources/CRustCore/lib/*.a
+IPAD/cmd.txt
+
 
 # ==========================================
 # PC Subproject (Rust / Cargo)
