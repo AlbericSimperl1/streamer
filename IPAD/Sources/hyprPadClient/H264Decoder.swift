@@ -60,10 +60,8 @@ final class H264Decoder: ObservableObject, @unchecked Sendable {
             onStatusUpdate?("PPS ontvangen (\(nalu.count) bytes)")
             rebuildFormatDescription()
         case 5:  // IDR
-            onStatusUpdate?("IDR: \(nalu.count)bytes")
             enqueueFrame(nalu, isIDR: true)
         case 1:  // non-IDR (P-frame)
-            onStatusUpdate?("P: \(nalu.count)bytes")
             enqueueFrame(nalu, isIDR: false)
         default:
             break
@@ -211,7 +209,6 @@ final class H264Decoder: ObservableObject, @unchecked Sendable {
             }
 
             r.enqueue(sBuf)
-            print("status na enqueue:", r.status.rawValue, r.error?.localizedDescription ?? "-")
             // Laat ons weten of hij daadwerkelijk frames accepteert!
 
         }

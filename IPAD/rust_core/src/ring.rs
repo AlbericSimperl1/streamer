@@ -152,6 +152,12 @@ impl Ring {
         }
     }
 
+    pub fn set_discontinuity(&self, v: bool) {
+        self.discontinuity.store(v, Ordering::Release);
+    }
+    pub fn take_discontinuity(&self) -> bool {
+        self.discontinuity.swap(false, Ordering::AcqRel)
+    }
     /// Schrijf een UDP-pakket in de ring. Retourneert `false` als het pakket
     /// groter is dan CAPACITY (wordt geskipped).
     pub fn write(&self, data: &[u8]) -> bool {

@@ -50,50 +50,113 @@ impl NaluParser {
                 let mut frame_count: u32 = 0;
                 let mut last_stats = Instant::now();
 
+                // while !stop_clone.load(Ordering::Relaxed) {
+                //     buffer.clear();
+                //     last_read = ring.read_since(last_read, &mut buffer);
+
+                //     if buffer.is_empty() {
+                //         thread::sleep(Duration::from_millis(2));
+                //         continue;
+                //     }
+
+                //     pending.extend_from_slice(&buffer);
+
+                //     // Vind alle startcodes en splits in units.
+                //     let units = split_annexb(&pending);
+                //     if units.is_empty() {
+                //         continue;
+                //     }
+
+                //     let last_idx = units.len() - 1;
+                //     let last_complete = units[last_idx].complete;
+
+                //     // Bepaal hoeveel bytes we veilig kunnen "consumen" uit pending.
+                //     let consumed_upto = if last_complete {
+                //         units[last_idx].end
+                //     } else {
+                //         // Laatste unit is incompleet — bewaren voor volgende iteratie.
+                //         if units.len() > 1 {
+                //             units[units.len() - 2].end
+                //         } else {
+                //             0
+                //         }
+                //     };
+
+                //     // Emit alle complete units (en optioneel de laatste als die compleet is).
+                //     let emit_count = if last_complete {
+                //         units.len()
+                //     } else {
+                //         units.len().saturating_sub(1)
+                //     };
+
+                //     for u in &units[..emit_count] {
+                //         emit(&pending, u, &mut on_nalu, &mut frame_count);
+                //     }
+
+                //     // Verwijder verwerkte bytes uit pending.
+                //     if consumed_upto > 0 {
+                //         if consumed_upto >= pending.len() {
+                //             pending.clear();
+                //         } else {
+                //             pending.drain(..consumed_upto);
+                //         }
+                //     }
+
+                //     // FPS ~1x/seconde.
+                //     let elapsed = last_stats.elapsed();
+                //     if elapsed >= Duration::from_secs(1) {
+                //         let fps = (frame_count as f64 / elapsed.as_secs_f64()).round() as u32;
+                //         stats.set_fps(fps);
+                //         frame_count = 0;
+                //         last_stats = Instant::now();
+                //     }
+                // }
+
                 while !stop_clone.load(Ordering::Relaxed) {
+                    // 1. Controleer op discontinuity
+                    if ring.take_discontinuity() {
+                        pending.clear();
+                        // Optioneel: log via on_log callback
+                        // on_log(1, "Discontinuity - clearing pending");
+                        continue;
+                    }
+
+                    // 2. Lees nieuwe data uit de ring
                     buffer.clear();
                     last_read = ring.read_since(last_read, &mut buffer);
-
                     if buffer.is_empty() {
                         thread::sleep(Duration::from_millis(2));
                         continue;
                     }
-
                     pending.extend_from_slice(&buffer);
 
-                    // Vind alle startcodes en splits in units.
+                    // 3. Splits Annex-B stream in NAL units
                     let units = split_annexb(&pending);
                     if units.is_empty() {
                         continue;
                     }
 
-                    let last_idx = units.len() - 1;
-                    let last_complete = units[last_idx].complete;
-
-                    // Bepaal hoeveel bytes we veilig kunnen "consumen" uit pending.
-                    let consumed_upto = if last_complete {
-                        units[last_idx].end
+                    // 4. Bepaal hoeveel bytes we kunnen consumeren
+                    let consumed_upto = if units.len() > 1 {
+                        units[units.len() - 1].start - units[units.len() - 1].sc_len
+                    } else if units.len() == 1 {
+                        let u = &units[0];
+                        u.start.saturating_sub(u.sc_len)
                     } else {
-                        // Laatste unit is incompleet — bewaren voor volgende iteratie.
-                        if units.len() > 1 {
-                            units[units.len() - 2].end
-                        } else {
-                            0
-                        }
+                        0
                     };
 
-                    // Emit alle complete units (en optioneel de laatste als die compleet is).
-                    let emit_count = if last_complete {
+                    // 5. Emit alle complete units
+                    let emit_count = if units.last().unwrap().complete {
                         units.len()
                     } else {
                         units.len().saturating_sub(1)
                     };
-
                     for u in &units[..emit_count] {
                         emit(&pending, u, &mut on_nalu, &mut frame_count);
                     }
 
-                    // Verwijder verwerkte bytes uit pending.
+                    // 6. Verwijder verwerkte bytes
                     if consumed_upto > 0 {
                         if consumed_upto >= pending.len() {
                             pending.clear();
@@ -102,7 +165,7 @@ impl NaluParser {
                         }
                     }
 
-                    // FPS ~1x/seconde.
+                    // 7. FPS berekenen
                     let elapsed = last_stats.elapsed();
                     if elapsed >= Duration::from_secs(1) {
                         let fps = (frame_count as f64 / elapsed.as_secs_f64()).round() as u32;
@@ -138,6 +201,7 @@ struct UnitRange {
     start: usize, // index van eerste byte ná startcode
     end: usize,   // exclusief
     complete: bool,
+    sc_len: usize,
 }
 
 fn emit<F>(data: &[u8], unit: &UnitRange, on_nalu: &mut F, frame_count: &mut u32)
@@ -235,6 +299,7 @@ fn split_annexb(data: &[u8]) -> Vec<UnitRange> {
             start: payload_start,
             end: payload_end,
             complete: idx + 1 < starts.len(),
+            sc_len: starts[idx].0,
         });
     }
 
