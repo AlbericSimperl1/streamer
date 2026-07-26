@@ -1,42 +1,45 @@
 use std::io::Write;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use super::packetizer::Packetizer;
-
-/// Owns a running `ffmpeg -i - … out.mp4` process
+/// Owns a running `ffmpeg -i - …` process.
+///
+/// **Wijziging t.o.v. de vorige versie:** ffmpeg verstuurt niet meer zelf
+/// over UDP (`-f mpegts udp://...`). MPEG-TS-containeroverhead liet de
+/// Annex-B-scanner aan de iPad-kant struikelen over toevallige
+/// `00 00 01`-patronen in TS-sync-bytes/PAT/PMT — dat was de bron van eerst
+/// de crash en daarna de "absurd veel frames"-bug. In plaats daarvan zet
+/// ffmpeg een kale Annex-B H.264 elementary stream op stdout
+/// (`-f h264 -`); `Packetizer` (zie `packetizer.rs`) leest die stream,
+/// herkent de NAL-unit-grenzen zelf, en verstuurt ze gechunkt met een
+/// expliciete header over UDP.
 pub struct Encoder {
     child: Child,
     width: u32,
     height: u32,
-    /// Houdt de packetizer-thread in leven zolang de encoder leeft. Wordt
-    /// gedropt (en dus gestopt) samen met de Encoder.
-    _packetizer: Packetizer,
 }
 
 impl Encoder {
-    /// Spawn ffmpeg reading raw BGR0 frames from stdin and streaming them as
-    /// H.264 / MPEG-TS over UDP — mirrors the standalone command:
+    /// Spawn ffmpeg reading raw BGR0 frames from stdin and emitting a raw
+    /// Annex-B H.264 elementary stream on stdout — mirrors the standalone
+    /// command:
     ///
     /// ```text
     /// ffmpeg -re -f lavfi -i testsrc=size=1920x1080:rate=60 \
     ///   -c:v libx264 -preset ultrafast -tune zerolatency \
     ///   -g 30 -keyint_min 30 \
-    ///   -f mpegts udp://192.168.0.119:5000?pkt_size=1316
+    ///   -f h264 -
     /// ```
     ///
-    /// `output_path` is only kept for API compatibility with the caller; the
-    /// stream is the single UDP output (writing an extra `.mp4` alongside the
-    /// UDP url breaks the keyframe structure VLC needs to actually decode).
+    /// `output_path` is only kept for API compatibility with the caller —
+    /// there's no file output, the stream goes to stdout for the
+    /// `Packetizer` to consume.
     pub fn start(width: u32, height: u32, fps: u32, _output_path: &str) -> Result<Self, String> {
         let size = format!("{width}x{height}");
         let rate = format!("{fps}");
         let gop = format!("{fps}");
-        // Bestemming voor onze EIGEN gesequenced UDP-verzending (Packetizer),
-        // niet meer voor ffmpeg zelf. Zelfde host:poort als voorheen.
-        let ipad_dest = "192.168.0.119:5000";
 
-        let mut child = Command::new("ffmpeg")
+        let child = Command::new("ffmpeg")
             .args([
                 // --- INPUT: raw BGR0 frames from stdin (Rust) ---
                 "-y",
@@ -50,23 +53,23 @@ impl Encoder {
                 &rate,
                 "-i",
                 "-",
-                // --- ENCODER ---
+                // --- ENCODER: match the working standalone command ---
                 "-c:v",
                 "libx264",
                 "-preset",
                 "ultrafast",
                 "-tune",
                 "zerolatency",
+                // bgr0 must be converted to yuv420p for H.264 compatibility.
                 "-pix_fmt",
                 "yuv420p",
                 "-g",
                 &gop,
                 "-keyint_min",
                 &gop,
-                // --- OUTPUT: rauwe Annex-B H.264 stream naar stdout. ---
-                // GEEN mpegts meer: de iPad-parser verwacht een kale
-                // elementary stream, geen TS-verpakking. Wij doen zelf de
-                // UDP-verzending (met sequence-nummers) via de Packetizer.
+                // --- OUTPUT: kale Annex-B H.264 elementary stream naar
+                // stdout. Geen MPEG-TS, geen UDP hier — de Packetizer aan
+                // de Rust-kant doet nu zelf de framing/verzending.
                 "-f",
                 "h264",
                 "-",
@@ -77,19 +80,17 @@ impl Encoder {
             .spawn()
             .map_err(|e| e.to_string())?;
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "ffmpeg stdout kon niet genomen worden".to_string())?;
-
-        let packetizer = Packetizer::start(stdout, ipad_dest.to_string());
-
         Ok(Self {
             child,
             width,
             height,
-            _packetizer: packetizer,
         })
+    }
+
+    /// Neem de stdout-handle over zodat de `Packetizer` er NAL-units uit kan
+    /// lezen. Mag maar één keer aangeroepen worden (direct na `start`).
+    pub fn take_stdout(&mut self) -> Option<ChildStdout> {
+        self.child.stdout.take()
     }
 
     /// Push one tightly-packed BGR0 frame (`width * height * 4` bytes).
@@ -111,14 +112,13 @@ impl Encoder {
     }
 
     /// Close stdin so ffmpeg flushes and finalizes. Gives FFmpeg up to 3
-    /// seconds to exit gracefully; after that it gets SIGKILL'd.
+    /// seconds to exit gracefully; after that it gets SIGKILL'd. Closing
+    /// stdin also causes ffmpeg to close stdout (EOF), which lets the
+    /// `Packetizer`'s read loop stop on its own.
     pub fn finish(&mut self) -> Result<(), String> {
-        // 1. Sluit de stdin pipe — stuurt EOF naar FFmpeg.
         if let Some(stdin) = self.child.stdin.take() {
             std::mem::drop(stdin);
         }
-
-        // 2. Wacht met timeout: geef FFmpeg 3 seconden om netjes te stoppen.
         Self::wait_with_timeout(&mut self.child, Duration::from_secs(3))
     }
 
@@ -152,8 +152,6 @@ impl Encoder {
 
 impl Drop for Encoder {
     fn drop(&mut self) {
-        // Best-effort cleanup: close stdin, then wait with a 2-second timeout.
-        // If FFmpeg doesn't exit, kill it to prevent zombie processes.
         self.child.stdin.take();
         let _ = Self::wait_with_timeout(&mut self.child, Duration::from_secs(2));
     }

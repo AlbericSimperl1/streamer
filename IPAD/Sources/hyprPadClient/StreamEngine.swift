@@ -42,8 +42,8 @@ class StreamEngine: ObservableObject, @unchecked Sendable {
                 print("🦀 Rust [\(level)]: \(String(cString: msgPtr))")
             }
 
-        // 4. Verpak ze in de C struct
-        let callbacks = HyprpadCallbacks(on_nalu: onNalu)
+        // 4. Verpak ze in de C struct (beide verplichte argumenten)
+        let callbacks = HyprpadCallbacks(on_nalu: onNalu, on_log: onLog)
 
         // 5. Start de Rust Engine op poort 5000!
         let success = hyprpad_start(5000, callbacks, nil)

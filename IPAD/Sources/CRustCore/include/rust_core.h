@@ -23,11 +23,20 @@
 
 #define NAL_PPS 8
 
+#define HEADER_LEN 8
+
 /**
- * NALU-callback. Wordt aangeroepen op de `nalu-parser` thread (background).
+ * NALU-callback. Wordt aangeroepen op de `hyprpad-udp` thread (background).
  * De pointer is enkel geldig tijdens de call — kopieer de bytes in Swift.
  */
 typedef void (*OnNalu)(const uint8_t *data, uint32_t len, uint8_t nal_type, void *ctx);
+
+/**
+ * Log-callback. `level`: 0=info, 1=warn, 2=error. Swift moet altijd een geldige
+ * functie meegeven (geen `Option`) — cbindgen vertaalt `Option<fn>` namelijk
+ * niet naar een C-function-pointer.
+ */
+typedef void (*OnLog)(uint8_t level, const char *msg, void *ctx);
 
 /**
  * Callbacks die Swift meegeeft. Eén struct = geen volgorderisico's.
@@ -35,6 +44,7 @@ typedef void (*OnNalu)(const uint8_t *data, uint32_t len, uint8_t nal_type, void
  */
 typedef struct {
     OnNalu on_nalu;
+    OnLog on_log;
 } HyprpadCallbacks;
 
 /**
@@ -51,7 +61,7 @@ typedef struct {
 } HyprpadStats;
 
 /**
- * Start de UDP-listener + NALU-parser op `port`.
+ * Start de UDP-listener (incl. NAL-reassemblage) op `port`.
  *
  * # Safety
  * - Niet twee keer aanroepen zonder `hyprpad_stop` ertussen.
@@ -60,7 +70,7 @@ typedef struct {
 bool hyprpad_start(uint16_t port, HyprpadCallbacks callbacks, void *ctx);
 
 /**
- * Stop de actieve stream en join de worker-threads.
+ * Stop de actieve stream en join de worker-thread.
  */
 void hyprpad_stop(void);
 
