@@ -181,14 +181,10 @@ impl App {
                 //     .on_hover_text("Reset naar 1440x1080 @ 60 Hz")
                 //     .clicked()
                 // {
-                //     self.config.width = 1440;
-                //     self.config.height = 1080;
-                //     self.config.fps = 60;
-                //     self.config.scale = 1.0; // Als je de schaalvergroting ook wilt resetten
-                // }
+
                 ui.add_space(8.0); // Iets meer ruimte ervoor
                 if custom_icon_button(ui, "↺", ACC)
-                    .on_hover_text("Reset naar 1440x1080 @ 60 Hz")
+                    .on_hover_text("Reset to 1440x1080 @ 60 Hz")
                     .clicked()
                 {
                     self.config.width = 1440;
@@ -363,7 +359,7 @@ impl App {
         config_label(ui, "frame rate");
         ui.horizontal(|ui| {
             tree_indent(ui);
-            custom_drag_bar(ui, &mut self.config.fps, 1..=90, Some(1.0), 130.0);
+            custom_drag_bar(ui, &mut self.config.fps, 1..=144, Some(1.0), 130.0);
             ui.label(
                 egui::RichText::new(format!("{} Hz", self.config.fps))
                     .color(T2)
