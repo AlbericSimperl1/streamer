@@ -7,9 +7,6 @@ use std::time::{Duration, SystemTime};
 
 use std::collections::VecDeque;
 
-/// Centrale applicatie-state. Bevat alle data en business logic.
-/// De GUI (zie `gui.rs`) leest en schrijft via pub(crate) velden en
-/// roept pub-methodes aan om acties te triggeren.
 pub struct App {
     pub config: MonitorConfig,
     pub monitors: Vec<MonitorJson>,
@@ -18,19 +15,13 @@ pub struct App {
     pub auto_refresh: bool,
     pub last_refresh: Option<SystemTime>,
 
-    // capture
     pub capture: Option<capture::CaptureSession>,
     pub capture_output_path: String,
-    /// Receiver voor de status nadat een achtergrond-stop klaar is.
     pub stop_result_rx: Option<mpsc::Receiver<capture::CaptureStatus>>,
 
-    /// Wordt gezet door de ctrlc signal handler in main.rs.
-    /// Wanneer true, triggert de GUI-loop een graceful shutdown.
     pub signal_flag: Option<Arc<AtomicBool>>,
-    /// Voorkomt dat shutdown meerdere keren wordt aangeroepen.
     shutdown_done: bool,
 
-    // Performance & Stats tracking for the graph
     pub fps_history: VecDeque<f32>,
     pub current_fps: f32,
     pub stream_start_time: Option<SystemTime>,
@@ -39,11 +30,6 @@ pub struct App {
 }
 
 impl App {
-    // pub fn new() -> Self {
-    //     Self::with_signal_flag_opt(None)
-    // }
-
-    /// Constructor met een optionele signal flag (gezet door ctrlc handler).
     pub fn with_signal_flag(flag: Arc<AtomicBool>) -> Self {
         Self::with_signal_flag_opt(Some(flag))
     }
@@ -95,7 +81,6 @@ impl App {
         }
     }
 
-    /// Monitor-lijst ophalen van Hyprland.
     pub fn refresh(&mut self) {
         match hypr::get_monitors() {
             Ok(monitors) => {
@@ -123,7 +108,6 @@ impl App {
             }
         }
 
-        // FPS statistieken berekenen en history bijhouden voor de grafiek
         let now = SystemTime::now();
         let (current_frames, is_capturing) = match self.capture.as_ref().map(|c| c.status()) {
             Some(capture::CaptureStatus::Capturing { frames, .. }) => (frames, true),
@@ -170,7 +154,6 @@ impl App {
         }
     }
 
-    /// Checkt of een SIGINT/SIGTERM is ontvangen.
     pub fn should_quit(&self) -> bool {
         self.signal_flag
             .as_ref()
@@ -185,37 +168,7 @@ impl App {
         self.stop_result_rx.is_some()
     }
 
-    // pub fn do_create(&mut self) {
-    //     let name = self.config.name.clone();
-    //     let kw = self.config.to_keyword();
-
-    //     self.log(
-    //         format!("▶ Creating virtual monitor '{name}'..."),
-    //         LogLevel::Info,
-    //     );
-    //     self.log(format!("  $ hyprctl keyword monitor {kw}"), LogLevel::Info);
-    //     self.log(
-    //         format!("  $ hyprctl output create headless {name}"),
-    //         LogLevel::Info,
-    //     );
-
-    //     match hypr::create_monitor(&self.config) {
-    //         Ok(out) => {
-    //             self.log(
-    //                 format!("✓ Monitor '{name}' created. {}", out.trim()),
-    //                 LogLevel::Success,
-    //             );
-    //             self.refresh();
-    //         }
-    //         Err(e) => {
-    //             self.log(format!("⚠ {e}"), LogLevel::Warning);
-    //             self.refresh();
-    //         }
-    //     }
-    // }
-
     pub fn apply_config(&mut self) {
-        // 1. Maak de virtuele output ALLEEN aan als hij nog niet bestaat
         if !self.monitor_exists {
             if let Err(e) = hypr::create_headless_output(&self.config.name) {
                 eprintln!("Fout bij aanmaken headless monitor: {e}");
@@ -224,13 +177,10 @@ impl App {
             self.monitor_exists = true;
         }
 
-        // 2. Pas de (nieuwe) configuratie toe.
-        // Dit werkt direct op actieve monitoren in Hyprland!
         if let Err(e) = hypr::apply_monitor_keyword(&self.config) {
             eprintln!("Fout bij updaten monitor configuratie: {e}");
         }
 
-        // 3. Ververs de applicatiestate
         self.refresh();
     }
 
@@ -301,20 +251,14 @@ impl App {
             let (tx, rx) = mpsc::channel();
             self.stop_result_rx = Some(rx);
 
-            // Zet het stop+finalize werk OFF de GUI-thread. Eerder blokkeerde
-            // session.stop() de GUI-thread via h.join() → feeder.join() →
-            // child.wait(), wat de hele applicatie liet hangen.
             std::thread::spawn(move || {
                 session.stop();
                 let final_status = session.status();
                 let _ = tx.send(final_status);
-                // session wordt hier gedropt — alle threads zijn al joined.
             });
         }
     }
 
-    /// Poll het achtergrond-stopresultaat. Niet-blokkerend — elke GUI-frame
-    /// aangeroepen. Logt het resultaat zodra de stop-thread klaar is.
     pub fn poll_stop_result(&mut self) {
         let rx = match &self.stop_result_rx {
             Some(rx) => rx,
@@ -348,7 +292,6 @@ impl App {
         }
     }
 
-    /// Cleanup bij afsluiten: capture stoppen + virtuele monitor verwijderen.
     pub fn shutdown(&mut self) {
         if self.shutdown_done {
             return;
@@ -359,9 +302,7 @@ impl App {
             session.stop();
             println!("✓ Capture sessie gestopt bij afsluiten.");
         }
-        // Wacht ook eventuele achtergrond stop-thread af.
         if let Some(rx) = self.stop_result_rx.take() {
-            // Geef de stop-thread max 5 seconden om te finaliseren.
             let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
         }
         if self.monitor_exists {
@@ -374,14 +315,9 @@ impl App {
     }
 }
 
-/// Vangnet: als shutdown() niet is aangeroepen (bv. bij panic of onverwacht
-/// afsluiten), probeer alsnog netjes op te ruimen.
 impl Drop for App {
     fn drop(&mut self) {
-        // capture session dropt zichzelf (CaptureSession::drop zet stop_flag
-        // en joint threads), maar we willen ook de monitor opruimen.
         if self.capture.is_some() {
-            // CaptureSession::drop handelt het stoppen af.
             self.capture.take();
         }
         if self.monitor_exists {
@@ -390,8 +326,6 @@ impl Drop for App {
         }
     }
 }
-
-// ─── pad-helpers ──────────────────────────────────────────────
 
 fn default_capture_path() -> String {
     let mut p = dirs_or_tmp();

@@ -2,8 +2,8 @@ use crate::app::App;
 use eframe::egui;
 use std::time::Duration;
 
-// ─── system24-inspired Palette ──────────────────────────────────
-// Layered darks
+// palette
+// layered darks
 const BG: egui::Color32 = egui::Color32::from_rgb(19, 25, 26);
 const BG0: egui::Color32 = egui::Color32::from_rgb(24, 32, 34);
 const BG1: egui::Color32 = egui::Color32::from_rgb(26, 34, 36);
@@ -11,17 +11,17 @@ const BG2: egui::Color32 = egui::Color32::from_rgb(30, 39, 41);
 const BG3: egui::Color32 = egui::Color32::from_rgb(36, 45, 48);
 const CNV: egui::Color32 = egui::Color32::from_rgb(14, 20, 21);
 
-// Borders
+// borders
 const BRD: egui::Color32 = egui::Color32::from_rgb(38, 46, 48);
 const BRD_H: egui::Color32 = egui::Color32::from_rgb(58, 66, 70);
 
-// Text
+// text
 const T0: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 const T1: egui::Color32 = egui::Color32::from_rgb(219, 216, 210);
 const T2: egui::Color32 = egui::Color32::from_rgb(130, 130, 139);
 const T3: egui::Color32 = egui::Color32::from_rgb(90, 90, 96);
 
-// Accents
+// accents
 const ACC: egui::Color32 = egui::Color32::from_rgb(94, 193, 255);
 const ACC_D: egui::Color32 = egui::Color32::from_rgb(28, 55, 75);
 const GRN: egui::Color32 = egui::Color32::from_rgb(70, 190, 100);
@@ -29,8 +29,7 @@ const YEL: egui::Color32 = egui::Color32::from_rgb(220, 180, 80);
 const RED: egui::Color32 = egui::Color32::from_rgb(220, 90, 90);
 const RED_D: egui::Color32 = egui::Color32::from_rgb(65, 28, 28);
 
-// ─── App ────────────────────────────────────────────────────────
-
+// app
 impl App {
     pub fn new() -> Self {
         Self::with_signal_flag_opt(None)
@@ -66,10 +65,8 @@ impl eframe::App for App {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
 
-                    // ── Top status bar ──
                     self.render_top_bar(ui);
 
-                    // ── Main content area ──
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.add_space(4.0);
@@ -85,7 +82,6 @@ impl eframe::App for App {
                         ui.add_space(4.0);
                     });
 
-                    // ── Bottom status bar ──
                     self.render_bottom_bar(ui);
                     ui.add_space(4.0);
                 });
@@ -97,10 +93,9 @@ impl eframe::App for App {
     }
 }
 
-// ─── Panels ─────────────────────────────────────────────────────
+// panels
 
 impl App {
-    // ── Top status bar ──
     fn render_top_bar(&mut self, ui: &mut egui::Ui) {
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::hover());
@@ -120,7 +115,6 @@ impl App {
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
 
-                // Status dot + app name
                 let (dot, dot_col) = if self.is_capturing() {
                     ("●", ACC)
                 } else if self.monitor_exists {
@@ -143,7 +137,6 @@ impl App {
 
                 ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
 
-                // Monitor status
                 if self.monitor_exists {
                     ui.label(
                         egui::RichText::new(format!("● {}", self.config.name))
@@ -162,7 +155,6 @@ impl App {
 
                 ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
 
-                // Config summary
                 ui.label(
                     egui::RichText::new(format!(
                         "{}×{} @ {}fps",
@@ -173,16 +165,7 @@ impl App {
                     .size(11.0),
                 );
 
-                // reset to 1440x1080@60
-                // let reset_btn = egui::Button::new("↺").small();
-
-                // if ui
-                //     .add(reset_btn)
-                //     .on_hover_text("Reset naar 1440x1080 @ 60 Hz")
-                //     .clicked()
-                // {
-
-                ui.add_space(8.0); // Iets meer ruimte ervoor
+                ui.add_space(8.0);
                 if custom_icon_button(ui, "↺", ACC)
                     .on_hover_text("Reset to 1440x1080 @ 60 Hz")
                     .clicked()
@@ -190,10 +173,9 @@ impl App {
                     self.config.width = 1440;
                     self.config.height = 1080;
                     self.config.fps = 60;
-                    self.config.scale = 1.0; // Als je de schaalvergroting ook wilt resetten
+                    self.config.scale = 1.0;
                 }
 
-                // Right-aligned capture status
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let (cap_text, cap_col) = if self.is_capturing() {
                         ("● capturing", ACC)
@@ -215,7 +197,6 @@ impl App {
         });
     }
 
-    // ── Bottom status bar ──
     fn render_bottom_bar(&self, ui: &mut egui::Ui) {
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 22.0), egui::Sense::hover());
@@ -271,7 +252,6 @@ impl App {
         });
     }
 
-    // ── Config panel ──
     fn render_config_panel(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
             ui.set_width(280.0);
@@ -282,7 +262,6 @@ impl App {
         });
     }
 
-    // ── Controls panel ──
     fn render_controls_panel(&mut self, ui: &mut egui::Ui, stopping: bool) {
         panel_frame().show(ui, |ui| {
             ui.set_width(280.0);
@@ -293,9 +272,7 @@ impl App {
         });
     }
 
-    // ── Config items (tree-style) ──
     fn render_config(&mut self, ui: &mut egui::Ui) {
-        // ── identifier ──
         config_label(ui, "identifier");
         ui.horizontal(|ui| {
             tree_indent(ui);
@@ -327,7 +304,6 @@ impl App {
         });
         ui.add_space(6.0);
 
-        // ── width ──
         config_label(ui, "width");
         ui.horizontal(|ui| {
             tree_indent(ui);
@@ -341,7 +317,6 @@ impl App {
         });
         ui.add_space(6.0);
 
-        // ── height ──
         config_label(ui, "height");
         ui.horizontal(|ui| {
             tree_indent(ui);
@@ -355,7 +330,6 @@ impl App {
         });
         ui.add_space(6.0);
 
-        // ── frame rate ──
         config_label(ui, "frame rate");
         ui.horizontal(|ui| {
             tree_indent(ui);
@@ -369,7 +343,6 @@ impl App {
         });
         ui.add_space(6.0);
 
-        // ── scale ──
         config_label(ui, "scale");
         ui.horizontal(|ui| {
             tree_indent(ui);
@@ -389,7 +362,6 @@ impl App {
         });
     }
 
-    // ── Action buttons ──
     fn render_controls(&mut self, ui: &mut egui::Ui, stopping: bool) {
         let can_apply = !self.config.name.is_empty() && !stopping;
         let can_remove = self.monitor_exists && !self.is_capturing() && !stopping;
@@ -428,7 +400,6 @@ impl App {
         });
     }
 
-    // ── Canvas / position panel ──
     fn render_canvas_panel(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -436,7 +407,6 @@ impl App {
             ui.vertical(|ui| {
                 section_header(ui, "position");
 
-                // Position info line
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(format!("x: {}  y: {}", self.config.x, self.config.y))
@@ -447,7 +417,6 @@ impl App {
                 });
                 ui.add_space(4.0);
 
-                // ── Canvas ──
                 let canvas_size = ui.available_size();
                 let (response, painter) =
                     ui.allocate_painter(canvas_size, egui::Sense::click_and_drag());
@@ -462,7 +431,6 @@ impl App {
                 let virt_w = self.config.width as f32;
                 let virt_h = self.config.height as f32;
 
-                // ── Drag logic ──
                 if response.drag_started() {
                     ui.memory_mut(|m| {
                         m.data
@@ -545,7 +513,6 @@ impl App {
                     });
                 }
 
-                // ── Drawing ──
                 painter.rect_filled(canvas_rect, 0.0, CNV);
                 painter.rect_stroke(canvas_rect, 0.0, egui::Stroke::new(0.5_f32, BRD));
 
@@ -558,7 +525,6 @@ impl App {
                     egui::pos2(origin_x + sx * scale, origin_y + sy * scale)
                 };
 
-                // Grid lines
                 let grid_step_canvas = 90.0 * scale;
                 let grid_col = egui::Color32::from_rgb(26, 30, 32);
                 let mut grid_x = origin_x;
@@ -590,7 +556,6 @@ impl App {
                     grid_y += grid_step_canvas;
                 }
 
-                // Origin crosshair
                 painter.line_segment(
                     [
                         egui::pos2(origin_x - 8.0, origin_y),
@@ -606,7 +571,6 @@ impl App {
                     egui::Stroke::new(1.0_f32, BRD_H),
                 );
 
-                // Main monitor
                 let main_top_left = to_canvas(main_x, main_y);
                 let main_rect = egui::Rect::from_min_size(
                     main_top_left,
@@ -622,7 +586,6 @@ impl App {
                     T2,
                 );
 
-                // Virtual monitor
                 let virt_top_left = to_canvas(self.config.x as f32, self.config.y as f32);
                 let virt_rect = egui::Rect::from_min_size(
                     virt_top_left,
@@ -659,11 +622,8 @@ impl App {
     }
 }
 
-// ─── Helpers ────────────────────────────────────────────────────
-
 fn section_header(ui: &mut egui::Ui, title: &str) {
     ui.horizontal(|ui| {
-        // Short line before title
         let (line1, _) = ui.allocate_exact_size(egui::vec2(8.0, 1.0), egui::Sense::hover());
         let cy = line1.center().y;
         ui.painter().line_segment(
@@ -671,7 +631,6 @@ fn section_header(ui: &mut egui::Ui, title: &str) {
             egui::Stroke::new(0.5_f32, BRD),
         );
 
-        // Title text
         ui.label(
             egui::RichText::new(title)
                 .color(ACC)
@@ -680,7 +639,6 @@ fn section_header(ui: &mut egui::Ui, title: &str) {
                 .strong(),
         );
 
-        // Line after title (fills remaining width)
         let avail = ui.available_width();
         let (line2, _) = ui.allocate_exact_size(egui::vec2(avail, 1.0), egui::Sense::hover());
         let cy2 = line2.center().y;
@@ -718,58 +676,6 @@ fn darken(c: egui::Color32, factor: f32) -> egui::Color32 {
     )
 }
 
-// ─── Style ──────────────────────────────────────────────────────
-
-// fn configure_style(ctx: &egui::Context, scale: f32) {
-//     ctx.set_pixels_per_point(scale);
-
-//     // Font
-//     let mut fonts = egui::FontDefinitions::default();
-//     fonts.font_data.insert(
-//         "custom_font".to_owned(),
-//         egui::FontData::from_static(include_bytes!("/usr/share/fonts/mononoki-Regular.ttf")),
-//     );
-//     fonts
-//         .families
-//         .entry(egui::FontFamily::Proportional)
-//         .or_default()
-//         .insert(0, "custom_font".to_owned());
-//     fonts
-//         .families
-//         .entry(egui::FontFamily::Monospace)
-//         .or_default()
-//         .insert(0, "custom_font".to_owned());
-//     ctx.set_fonts(fonts);
-
-//     // Style
-//     let mut style = (*ctx.style()).clone();
-//     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-//     style.spacing.button_padding = egui::vec2(8.0, 4.0);
-
-//     let rounding = egui::Rounding::same(0.0);
-//     style.visuals.window_rounding = rounding;
-//     style.visuals.widgets.noninteractive.rounding = rounding;
-//     style.visuals.widgets.inactive.rounding = rounding;
-//     style.visuals.widgets.hovered.rounding = rounding;
-//     style.visuals.widgets.active.rounding = rounding;
-
-//     style.visuals.dark_mode = true;
-//     style.visuals.code_bg_color = CNV;
-//     style.visuals.override_text_color = Some(T1);
-
-//     style.visuals.widgets.inactive.bg_fill = BG2;
-//     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, T1);
-//     style.visuals.widgets.inactive.border_color = egui::Color32::TRANSPARENT;
-//     style.visuals.widgets.hovered.bg_fill = BG3;
-//     style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, T0);
-//     style.visuals.widgets.hovered.border_color = egui::Color32::TRANSPARENT;
-//     style.visuals.widgets.active.bg_fill = BG3;
-//     style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, T0);
-//     style.visuals.widgets.active.border_color = egui::Color32::TRANSPARENT;
-
-//     ctx.set_style(style);
-// }
-
 fn configure_style(ctx: &egui::Context, scale: f32) {
     ctx.set_pixels_per_point(scale);
 
@@ -791,7 +697,6 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
         .insert(0, "custom_font".to_owned());
     ctx.set_fonts(fonts);
 
-    // Style
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
     style.spacing.button_padding = egui::vec2(8.0, 4.0);
@@ -807,7 +712,6 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
     style.visuals.code_bg_color = CNV;
     style.visuals.override_text_color = Some(T1);
 
-    // ── FIX: bg_stroke in plaats van border_color ──
     style.visuals.widgets.inactive.bg_fill = BG2;
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, T1);
     style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
@@ -823,11 +727,8 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
     ctx.set_style(style);
 }
 
-// ─── Custom Widgets ─────────────────────────────────────────────
-
 use egui::{emath, Align2, Color32, FontId, Response, Sense, Stroke, Ui, Vec2};
 
-/// Flat TUI-style button. `color` determines the accent (ACC, GRN, RED).
 pub fn custom_button(
     ui: &mut Ui,
     text: &str,
@@ -871,7 +772,6 @@ pub fn custom_button(
     response
 }
 
-/// Minimal drag bar — thin line with a dot handle.
 pub fn custom_drag_bar<T: emath::Numeric>(
     ui: &mut Ui,
     value: &mut T,
@@ -886,7 +786,6 @@ pub fn custom_drag_bar<T: emath::Numeric>(
     let min = range.start().to_f64();
     let max = range.end().to_f64();
 
-    // ── Drag logic ──
     if response.dragged() || response.clicked() {
         if let Some(pointer_pos) = response.interact_pointer_pos() {
             let normalized = ((pointer_pos.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
@@ -900,7 +799,6 @@ pub fn custom_drag_bar<T: emath::Numeric>(
         }
     }
 
-    // ── Rendering ──
     if ui.is_rect_visible(rect) {
         let current_val = value.to_f64();
         let normalized = ((current_val - min) / (max - min)).clamp(0.0, 1.0) as f32;
@@ -909,7 +807,6 @@ pub fn custom_drag_bar<T: emath::Numeric>(
 
         let active = response.hovered() || response.dragged();
 
-        // Track (full width, dim)
         ui.painter().line_segment(
             [
                 egui::pos2(rect.min.x, center_y),
@@ -918,7 +815,6 @@ pub fn custom_drag_bar<T: emath::Numeric>(
             Stroke::new(1.0_f32, BRD),
         );
 
-        // Fill (left of handle, accent)
         ui.painter().line_segment(
             [
                 egui::pos2(rect.min.x, center_y),
@@ -927,7 +823,6 @@ pub fn custom_drag_bar<T: emath::Numeric>(
             Stroke::new(1.0_f32, if active { ACC } else { ACC_D }),
         );
 
-        // Handle (dot)
         let handle_r = if active { 4.0 } else { 3.0 };
         ui.painter().circle_filled(
             egui::pos2(handle_x, center_y),
@@ -939,21 +834,19 @@ pub fn custom_drag_bar<T: emath::Numeric>(
     response
 }
 
-/// Kleine TUI-style icoon knop (alleen tekst die van kleur verandert).
 pub fn custom_icon_button(ui: &mut Ui, icon: &str, color: Color32) -> Response {
     let desired_size = Vec2::new(16.0, 16.0);
     let (rect, response) = ui.allocate_exact_size(desired_size, Sense::click());
 
     if ui.is_rect_visible(rect) {
-        // Bepaal kleur op basis van interactie
         let text_col = if !response.enabled() {
             T3
         } else if response.is_pointer_button_down_on() {
-            T0 // Ingedrukt
+            T0
         } else if response.hovered() {
-            color // Hover (accentkleur)
+            color
         } else {
-            T2 // Ruststand (dim grijs)
+            T2
         };
 
         ui.painter().text(

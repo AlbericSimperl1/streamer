@@ -6,15 +6,13 @@ use ashpd::desktop::{
 };
 use std::os::fd::OwnedFd;
 
-/// Result of a successful portal handshake.
 pub struct PortalHandle {
     pub fd: OwnedFd,
     pub node_id: u32,
     pub session: Session<Screencast>,
 }
 
-/// Run the screencast portal flow. Triggers a system popup asking the user to
-/// pick a monitor. Returns once they've approved.
+/// screencast portal call
 pub async fn open_screencast() -> Result<PortalHandle, String> {
     let proxy = Screencast::new()
         .await

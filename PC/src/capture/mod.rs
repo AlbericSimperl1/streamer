@@ -7,8 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 
-// Permanente Tokio runtime zodat zbus / D-Bus achtergrondtaken
-// niet sterven wanneer een capture-sessie stopt.
 static TOKIO_RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 fn get_tokio_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
@@ -20,7 +18,6 @@ fn get_tokio_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
     }))
 }
 
-/// Live state of a capture session, readable from the GUI thread
 #[derive(Clone, Debug)]
 pub enum CaptureStatus {
     Idle,
@@ -120,7 +117,6 @@ fn set_status(status: &Arc<Mutex<CaptureStatus>>, s: CaptureStatus) {
     }
 }
 
-/// Runs entirely on the capture thread.
 fn run_capture_loop(
     stop_flag: Arc<AtomicBool>,
     status: Arc<Mutex<CaptureStatus>>,
@@ -160,15 +156,12 @@ fn run_capture_loop(
         .spawn(move || run_encoder(rx, stop_for_feeder, status_for_feeder, path_for_feeder))
         .expect("spawn encoder feeder");
 
-    // PipeWire capture loop (blokkeert tot stop_flag true wordt)
     if let Err(e) = pipewire::run_capture(pw_fd, node_id, tx, Arc::clone(&stop_flag)) {
         set_status(&status, CaptureStatus::Error(format!("PipeWire: {e}")));
     }
 
-    // Wacht tot de encoder thread klaar is
     let _ = feeder.join();
 
-    // Sluit de portal sessie expliciet af
     log::info!("portal: closing session before drop");
     if let Err(e) = rt.block_on(handle.session.close()) {
         log::warn!("portal: Session::close failed (continuing): {e}");
@@ -217,9 +210,6 @@ fn run_encoder(
         }
     };
 
-    // NAL-aware packetizer: leest ffmpeg's rauwe Annex-B stdout, knipt op
-    // NAL-grenzen en verstuurt gechunkt over UDP naar de iPad. Vervangt de
-    // vorige `-f mpegts udp://...` aanpak van ffmpeg zelf.
     let stdout = match enc.take_stdout() {
         Some(s) => s,
         None => {
@@ -302,10 +292,6 @@ fn run_encoder(
     }
 
     update_frame_count(&status, &output_path, frames);
-    // Volgorde is belangrijk: eerst ffmpeg's stdin sluiten + laten
-    // finaliseren (dat sluit ook zijn stdout), pas daarna de packetizer
-    // stoppen/joinen — zo heeft die de kans om de laatste NAL-units nog te
-    // versturen voordat de leeslus zelf op EOF stopt.
     finalize(&mut enc, &status, &output_path, frames, false);
     packetizer.stop();
 }

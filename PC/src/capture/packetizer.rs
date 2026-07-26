@@ -1,28 +1,3 @@
-//! NAL-aware packetizer: leest ffmpeg's rauwe Annex-B H.264-stdout,
-//! herkent NAL-unit-grenzen via een SIMD subslice-zoektocht (`memchr`), en
-//! verstuurt elke NAL-unit als één of meer UDP-datagrammen met een 8-byte
-//! framing-header zodat de ontvanger (`IPAD/rust_core/src/udp.rs`) ze exact
-//! kan reassembleren — zonder zelf nog naar startcodes te hoeven zoeken.
-//!
-//! **Waarom dit nodig is:** voorheen liet ffmpeg zelf de UDP-verzending doen
-//! via `-f mpegts udp://...`. MPEG-TS voegt containeroverhead toe (188-byte
-//! TS-packets, PAT/PMT, sync-bytes) die de Annex-B-scanner aan de
-//! ontvangende kant liet struikelen over toevallige `00 00 01`-patronen in
-//! die overhead — vandaar eerst de crash (kapotte SPS/PPS) en daarna de
-//! "absurd veel frames"-bug (elke valse match werd als NAL-unit geteld).
-//! Door ffmpeg een kale Annex-B-stream op stdout te laten zetten
-//! (`-f h264 -`, zie `encoder.rs`) en zelf de framing te doen, weet de
-//! ontvanger exact waar elke NAL-unit begint en eindigt.
-//!
-//! Wire-formaat per UDP-pakketje (alle velden big-endian):
-//! ```text
-//! [frame_id: u32][chunk_index: u16][total_chunks: u16][payload bytes...]
-//! ```
-//! `frame_id` is een oplopende teller per NAL-unit (niet per access-unit/
-//! frame — SPS, PPS en elke slice krijgen elk hun eigen id). Payload is max.
-//! `MAX_PAYLOAD` bytes, dus elk pakketje (incl. header) blijft ruim onder
-//! een normale Ethernet-MTU (geen IP-fragmentatie).
-
 use std::io::Read;
 use std::net::{ToSocketAddrs, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,9 +10,6 @@ const READ_CHUNK: usize = 64 * 1024;
 pub const MAX_PAYLOAD: usize = 1300;
 const HEADER_LEN: usize = 8;
 
-/// Vast IP:poort van de iPad-ontvanger. Zelfde adres als voorheen in
-/// `encoder.rs` stond ingebakken — nu is de packetizer verantwoordelijk voor
-/// de verzending in plaats van ffmpeg zelf.
 pub const IPAD_ADDR: &str = "192.168.0.119:5000";
 
 pub struct Packetizer {
@@ -46,8 +18,6 @@ pub struct Packetizer {
 }
 
 impl Packetizer {
-    /// Start de packetizer-thread. Leest uit `reader` (typisch ffmpeg's
-    /// `ChildStdout`) tot EOF of tot `stop()` aangeroepen wordt.
     pub fn start<R, A>(
         mut reader: R,
         target_addr: A,
@@ -76,10 +46,6 @@ impl Packetizer {
         })
     }
 
-    /// Signaleer de thread te stoppen en wacht tot hij afgesloten is. Roep
-    /// dit pas aan NADAT `Encoder::finish()` ffmpeg's stdin gesloten heeft
-    /// (ffmpeg flusht dan en sluit stdout, waarna de leeslus vanzelf al op
-    /// EOF stopt — deze call is vooral om netjes te joinen).
     pub fn stop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         if let Some(h) = self.handle.take() {
@@ -98,9 +64,6 @@ impl Drop for Packetizer {
 }
 
 fn packetize_loop<R: Read>(reader: &mut R, socket: &UdpSocket, stop: &Arc<AtomicBool>) {
-    // Accumulerende buffer voor bytes die nog niet tot een complete NAL-unit
-    // hebben geleid — bewaart overblijfselen van de vorige read, net zoals
-    // de oude Annex-B parser dat aan de ontvangst-kant deed.
     let mut pending: Vec<u8> = Vec::with_capacity(READ_CHUNK * 2);
     let mut read_buf = vec![0u8; READ_CHUNK];
     let mut frame_id: u32 = 0;
@@ -132,12 +95,6 @@ fn packetize_loop<R: Read>(reader: &mut R, socket: &UdpSocket, stop: &Arc<Atomic
     }
 }
 
-/// Vind alle Annex-B startcodes (3- of 4-byte variant) in `data` via een
-/// snelle (SIMD) subslice-zoektocht. Retourneert per gevonden startcode
-/// `(sc_start, payload_start)`:
-/// - `sc_start`: index van het eerste `0x00` van de startcode zelf.
-/// - `payload_start`: index van het eerste byte ná de startcode (de
-///   NAL-header-byte, begin van de eigenlijke NAL-unit-payload).
 fn find_start_codes(data: &[u8]) -> Vec<(usize, usize)> {
     let mut result = Vec::new();
     let finder = memmem::Finder::new(&[0, 0, 1]);
@@ -157,11 +114,6 @@ fn find_start_codes(data: &[u8]) -> Vec<(usize, usize)> {
     result
 }
 
-/// Geef de complete NAL-unit-ranges terug die uit `pending` gehaald kunnen
-/// worden, plus de offset waarop `pending` gedraineerd moet worden vóór de
-/// volgende read. De laatste (mogelijk nog incomplete) unit blijft altijd
-/// bewaard voor de volgende iteratie — precies zoals de oude Rust-kant
-/// parser dat deed, alleen dan hier aan de zender-kant.
 fn extract_complete_units(pending: &[u8]) -> (Vec<(usize, usize)>, usize) {
     let starts = find_start_codes(pending);
     if starts.len() < 2 {
@@ -181,8 +133,6 @@ fn extract_complete_units(pending: &[u8]) -> (Vec<(usize, usize)>, usize) {
     (units, starts[starts.len() - 1].0)
 }
 
-/// Knip één NAL-unit in chunks van max. `MAX_PAYLOAD` bytes en verstuur elk
-/// stuk met zijn framing-header.
 fn send_nal(socket: &UdpSocket, nal: &[u8], frame_id: &mut u32) {
     if nal.is_empty() {
         return;

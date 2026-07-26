@@ -8,20 +8,18 @@ use pw::{properties::properties, spa};
 
 use super::Frame;
 
-/// Shared state inside the stream listener
+/// data in stream listener
 struct UserData {
     tx: Sender<Frame>,
     format: spa::param::video::VideoInfoRaw,
     have_format: bool,
     stop_flag: Arc<AtomicBool>,
-    /// Whether we already called quit to avoid double-quit.
     quit_done: std::cell::Cell<bool>,
-    /// Raw pointer to the main loop, used to call quit.
+    /// pointer to quit
     mainloop_ptr: std::cell::Cell<*mut pw::sys::pw_main_loop>,
 }
 
 impl UserData {
-    /// Call quit on the main loop (once).
     fn request_quit(&self) {
         if self.quit_done.get() {
             return;
@@ -36,8 +34,7 @@ impl UserData {
     }
 }
 
-/// Run the PipeWire main loop until `stop_flag` is set or the channel closes.
-/// `pw_fd` is consumed (PipeWire takes ownership).
+/// run until stop_flag
 pub fn run_capture(
     pw_fd: OwnedFd,
     node_id: u32,
@@ -117,7 +114,7 @@ pub fn run_capture(
             );
         })
         .process(|stream, user_data| {
-            // Check stop flag on every process callback.
+            // Check stop_flag
             if user_data.stop_flag.load(Ordering::SeqCst) {
                 user_data.request_quit();
                 return;
@@ -145,7 +142,7 @@ pub fn run_capture(
 
                     let w = user_data.format.size().width;
                     let h = user_data.format.size().height;
-                    let expected = (w as usize) * (h as usize) * 4; // BGR0 = 4 bytes/pixel
+                    let expected = (w as usize) * (h as usize) * 4; // 4 bytes/pixel
                     let take = size.min(expected);
 
                     if let Some(mapped) = data.data() {
@@ -157,7 +154,6 @@ pub fn run_capture(
                             data: slice.to_vec(),
                         };
                         if user_data.tx.send(frame).is_err() {
-                            // Encoder gone — quit the main loop.
                             user_data.request_quit();
                         }
                     }
@@ -242,13 +238,7 @@ pub fn run_capture(
 
     log::info!("pw stream connected to node {node_id}");
 
-    // Periodisch de stop_flag controleren via een PipeWire timer.
-    //
-    // BELANGRIJK: de vorige implementatie gebruikte `add_idle(true, ...)` wat
-    // een spin-loop was die elke event-loop iteratie draaide. Dit blokkeerde
-    // de PipeWire process callbacks waardoor frames niet werden afgeleverd
-    // (het "1 frame" probleem). Een timer met 100ms interval laat de event
-    // loop vrij om frames te dispatchen.
+    // priodically check flag
     let stop_for_timer = stop_flag.clone();
     let _timer = mainloop.loop_().add_timer(move |_expirations| {
         if stop_for_timer.load(Ordering::SeqCst) {
