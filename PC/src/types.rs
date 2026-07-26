@@ -17,7 +17,7 @@ pub struct MonitorJson {
     pub vrr: bool,
 }
 
-/// Monitor parameters die de gebruiker in de GUI instelt.
+/// Monitor parameters
 #[derive(Debug, Clone)]
 pub struct MonitorConfig {
     pub name: String,
@@ -44,10 +44,10 @@ impl Default for MonitorConfig {
 }
 
 impl MonitorConfig {
-    /// Formatteert als `name,WxH@fps,XxY,scale`.
+    /// `name,WxH@fps,XxY,scale`.
     pub fn to_keyword(&self) -> String {
         format!(
-            // "hyprctl keyword monitor \"{},{}x{}@{},{}x{},{}\"",
+            // "hyprctl keyword monitor \"{name},{W}x{H}@{fps},{X}x{Y},{scale}\"",
             "{},{}x{}@{},{}x{},{}",
             self.name, self.width, self.height, self.fps, self.x, self.y, self.scale
         )

@@ -5,6 +5,7 @@ import UIKit
 struct ContentView: View {
     @StateObject private var viewModel = StreamEngine()
     @State private var isNotchVisible: Bool = true
+    @State private var ipAddress: String? = nil
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -16,11 +17,16 @@ struct ContentView: View {
                     .ignoresSafeArea()
 
                 if !viewModel.isStreaming {
-                    Text("Ready to Connect")
-                        .font(.title2)
-                        .foregroundColor(.gray)
-                        .allowsHitTesting(false)
-                } else {
+                    VStack(spacing: 8) {
+                        Text("Ready to Connect")
+                            .font(.title2.weight(.bold))
+                            .foregroundColor(.gray)
+
+                        Text("IP: \(ipAddress ?? "Ophalen...")")
+                            .font(.subheadline.monospaced())
+                            .foregroundColor(.gray.opacity(0.8))
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             .onTapGesture {
@@ -56,6 +62,59 @@ struct ContentView: View {
         }
         .statusBar(hidden: true)
         .persistentSystemOverlays(.hidden)
+        .onAppear {
+            refreshIPAddress()
+        }
+        .onChange(of: viewModel.isStreaming) { _, isStreaming in
+            // Ververs het IP-adres zodra de stream stopt
+            if !isStreaming {
+                refreshIPAddress()
+            }
+        }
+    }
+
+    private func refreshIPAddress() {
+        self.ipAddress = NetworkHelpers.getWiFiAddress()
+    }
+}
+
+// MARK: - Helper voor IP ophalen
+enum NetworkHelpers {
+    static func getWiFiAddress() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+
+        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else {
+            return nil
+        }
+
+        for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
+            let interface = ptr.pointee
+            let addrFamily = interface.ifa_addr.pointee.sa_family
+
+            if addrFamily == UInt8(AF_INET) {
+                let name = String(cString: interface.ifa_name)
+
+                // en0 is standaard de Wi-Fi interface op iOS/iPadOS
+                if name == "en0" {
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    getnameinfo(
+                        interface.ifa_addr,
+                        socklen_t(interface.ifa_addr.pointee.sa_len),
+                        &hostname,
+                        socklen_t(hostname.count),
+                        nil,
+                        0,
+                        NI_NUMERICHOST
+                    )
+                    address = String(cString: hostname)
+                    break
+                }
+            }
+        }
+
+        freeifaddrs(ifaddr)
+        return address
     }
 }
 
@@ -75,7 +134,6 @@ struct VideoDisplayView: UIViewRepresentable {
         init(displayLayer: AVSampleBufferDisplayLayer) {
             self.displayLayer = displayLayer
             super.init(frame: .zero)
-            // TIJDELIJK: Maak de achtergrond rood om te zien of de view echt op het scherm staat!
             self.backgroundColor = .black
             self.layer.addSublayer(displayLayer)
         }
@@ -86,7 +144,6 @@ struct VideoDisplayView: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            // Forceer de layer altijd exact zo groot als de view zelf
             displayLayer.frame = self.bounds
         }
     }
