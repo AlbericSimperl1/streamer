@@ -55,10 +55,18 @@ pub struct CaptureSession {
 }
 
 impl CaptureSession {
-    pub fn start(output_path: String) -> Result<Self, String> {
+    // 1. target_addr toegevoegd aan parameters
+    pub fn start(output_path: String, target_addr: String) -> Result<Self, String> {
         if output_path.trim().is_empty() {
             return Err("Output path is empty.".into());
         }
+
+        // Voeg automatisch poort 5000 toe als enkel een IP is ingevoerd
+        let full_target_addr = if target_addr.contains(':') {
+            target_addr
+        } else {
+            format!("{}:5000", target_addr.trim())
+        };
 
         let stop_flag = Arc::new(AtomicBool::new(false));
         let status = Arc::new(Mutex::new(CaptureStatus::Starting(
@@ -72,7 +80,7 @@ impl CaptureSession {
         let handle = std::thread::Builder::new()
             .name("hyprpad-capture".into())
             .spawn(move || {
-                run_capture_loop(stop_clone, status_clone, path_for_thread);
+                run_capture_loop(stop_clone, status_clone, path_for_thread, full_target_addr);
             })
             .map_err(|e| format!("Failed to spawn capture thread: {e}"))?;
 
@@ -117,10 +125,12 @@ fn set_status(status: &Arc<Mutex<CaptureStatus>>, s: CaptureStatus) {
     }
 }
 
+// 2. target_addr doorgegeven in de capture loop
 fn run_capture_loop(
     stop_flag: Arc<AtomicBool>,
     status: Arc<Mutex<CaptureStatus>>,
     output_path: String,
+    target_addr: String,
 ) {
     let rt = match get_tokio_runtime() {
         Ok(rt) => rt,
@@ -151,9 +161,19 @@ fn run_capture_loop(
     let status_for_feeder = Arc::clone(&status);
     let stop_for_feeder = Arc::clone(&stop_flag);
     let path_for_feeder = output_path.clone();
+    let target_addr_for_feeder = target_addr.clone();
+
     let feeder = std::thread::Builder::new()
         .name("hyprpad-encoder".into())
-        .spawn(move || run_encoder(rx, stop_for_feeder, status_for_feeder, path_for_feeder))
+        .spawn(move || {
+            run_encoder(
+                rx,
+                stop_for_feeder,
+                status_for_feeder,
+                path_for_feeder,
+                target_addr_for_feeder,
+            )
+        })
         .expect("spawn encoder feeder");
 
     if let Err(e) = pipewire::run_capture(pw_fd, node_id, tx, Arc::clone(&stop_flag)) {
@@ -171,11 +191,13 @@ fn run_capture_loop(
     set_status(&status, CaptureStatus::Idle);
 }
 
+// 3. target_addr ontvangen in run_encoder
 fn run_encoder(
     rx: std::sync::mpsc::Receiver<Frame>,
     stop_flag: Arc<AtomicBool>,
     status: Arc<Mutex<CaptureStatus>>,
     output_path: String,
+    target_addr: String,
 ) {
     let mut last_frame = loop {
         if stop_flag.load(Ordering::SeqCst) {
@@ -220,10 +242,11 @@ fn run_encoder(
             return;
         }
     };
+
     let packetizer_stop = Arc::new(AtomicBool::new(false));
     let mut packetizer = match packetizer::Packetizer::start(
         stdout,
-        packetizer::IPAD_ADDR,
+        &target_addr, // <-- Bestaat nu als string parameter
         Arc::clone(&packetizer_stop),
     ) {
         Ok(p) => p,

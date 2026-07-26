@@ -82,7 +82,7 @@ impl eframe::App for App {
                         ui.add_space(4.0);
                     });
 
-                    self.render_bottom_bar(ui);
+                    // self.render_bottom_bar(ui);
                     ui.add_space(4.0);
                 });
             });
@@ -197,60 +197,60 @@ impl App {
         });
     }
 
-    fn render_bottom_bar(&self, ui: &mut egui::Ui) {
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(ui.available_width(), 22.0), egui::Sense::hover());
+    // fn render_bottom_bar(&self, ui: &mut egui::Ui) {
+    //     let (rect, _) =
+    //         ui.allocate_exact_size(egui::vec2(ui.available_width(), 22.0), egui::Sense::hover());
 
-        ui.painter().rect_filled(rect, 0.0, BG1);
-        ui.painter().line_segment(
-            [
-                egui::pos2(rect.min.x, rect.min.y),
-                egui::pos2(rect.max.x, rect.min.y),
-            ],
-            egui::Stroke::new(0.5_f32, BRD),
-        );
+    //     ui.painter().rect_filled(rect, 0.0, BG1);
+    //     ui.painter().line_segment(
+    //         [
+    //             egui::pos2(rect.min.x, rect.min.y),
+    //             egui::pos2(rect.max.x, rect.min.y),
+    //         ],
+    //         egui::Stroke::new(0.5_f32, BRD),
+    //     );
 
-        let inner = egui::Rect::from_min_max(
-            egui::pos2(rect.min.x + 8.0, rect.min.y),
-            egui::pos2(rect.max.x - 8.0, rect.max.y),
-        );
+    //     let inner = egui::Rect::from_min_max(
+    //         egui::pos2(rect.min.x + 8.0, rect.min.y),
+    //         egui::pos2(rect.max.x - 8.0, rect.max.y),
+    //     );
 
-        ui.allocate_ui_at_rect(inner, |ui| {
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+    //     ui.allocate_ui_at_rect(inner, |ui| {
+    //         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+    //             ui.spacing_mut().item_spacing.x = 8.0;
 
-                ui.label(
-                    egui::RichText::new(format!("pos: ({}, {})", self.config.x, self.config.y))
-                        .color(T2)
-                        .monospace()
-                        .size(11.0),
-                );
-                ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
-                ui.label(
-                    egui::RichText::new(format!("scale: {:.2}", self.config.scale))
-                        .color(T2)
-                        .monospace()
-                        .size(11.0),
-                );
-                ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
-                ui.label(
-                    egui::RichText::new("grid: 90px")
-                        .color(T2)
-                        .monospace()
-                        .size(11.0),
-                );
+    //             ui.label(
+    //                 egui::RichText::new(format!("pos: ({}, {})", self.config.x, self.config.y))
+    //                     .color(T2)
+    //                     .monospace()
+    //                     .size(11.0),
+    //             );
+    //             ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
+    //             ui.label(
+    //                 egui::RichText::new(format!("scale: {:.2}", self.config.scale))
+    //                     .color(T2)
+    //                     .monospace()
+    //                     .size(11.0),
+    //             );
+    //             ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
+    //             ui.label(
+    //                 egui::RichText::new("grid: 90px")
+    //                     .color(T2)
+    //                     .monospace()
+    //                     .size(11.0),
+    //             );
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new("drag canvas to reposition")
-                            .color(T3)
-                            .monospace()
-                            .size(10.0),
-                    );
-                });
-            });
-        });
-    }
+    //             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    //                 ui.label(
+    //                     egui::RichText::new("drag canvas to reposition")
+    //                         .color(T3)
+    //                         .monospace()
+    //                         .size(10.0),
+    //                 );
+    //             });
+    //         });
+    //     });
+    // }
 
     fn render_config_panel(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
@@ -301,6 +301,32 @@ impl App {
             if self.monitor_exists {
                 ui.label(egui::RichText::new("✓").color(GRN).monospace().size(11.0));
             }
+        });
+        ui.add_space(6.0);
+
+        config_label(ui, "target ip");
+        ui.horizontal(|ui| {
+            tree_indent(ui);
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut self.config.ip)
+                    .desired_width(130.0)
+                    .frame(false)
+                    .text_color(T1)
+                    .hint_text(
+                        egui::RichText::new("192.168.x.x")
+                            .color(T3)
+                            .monospace()
+                            .size(11.0),
+                    ),
+            );
+            let line_y = response.rect.bottom();
+            ui.painter().line_segment(
+                [
+                    egui::pos2(response.rect.min.x, line_y),
+                    egui::pos2(response.rect.max.x, line_y),
+                ],
+                egui::Stroke::new(0.5_f32, if !self.config.ip.is_empty() { ACC } else { BRD }),
+            );
         });
         ui.add_space(6.0);
 
@@ -365,7 +391,8 @@ impl App {
     fn render_controls(&mut self, ui: &mut egui::Ui, stopping: bool) {
         let can_apply = !self.config.name.is_empty() && !stopping;
         let can_remove = self.monitor_exists && !self.is_capturing() && !stopping;
-        let can_start = self.monitor_exists && !self.is_capturing() && !stopping;
+        let can_start =
+            self.monitor_exists && !self.is_capturing() && !stopping && !self.config.ip.is_empty();
         let can_stop = self.is_capturing() && !stopping;
 
         let btn_width = (272.0 - 4.0) / 2.0;

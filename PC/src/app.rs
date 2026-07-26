@@ -226,8 +226,8 @@ impl App {
             "  A portal popup will appear — pick the virtual monitor.",
             LogLevel::Info,
         );
-
-        match capture::CaptureSession::start(path.clone()) {
+        let target_ip = self.config.ip.clone(); // <-- Dit ontbrak nog
+        match capture::CaptureSession::start(path.clone(), target_ip) {
             Ok(session) => {
                 self.capture = Some(session);
                 self.log(

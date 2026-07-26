@@ -27,6 +27,7 @@ pub struct MonitorConfig {
     pub x: i32,
     pub y: i32,
     pub scale: f32,
+    pub ip: String,
 }
 
 impl Default for MonitorConfig {
@@ -39,6 +40,7 @@ impl Default for MonitorConfig {
             x: -2000,
             y: 0,
             scale: 1.0,
+            ip: "".into(),
         }
     }
 }

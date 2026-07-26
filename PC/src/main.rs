@@ -13,7 +13,7 @@ mod types;
 fn main() -> Result<(), eframe::Error> {
     let scale: f32 = 1.5;
     let w: f32 = 857.33333;
-    let h: f32 = 422.0;
+    let h: f32 = 444.0;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_app_id("hyprland-display-streamer")
