@@ -466,12 +466,12 @@ final class H264Decoder {
         case 7:  // SPS
             spsData = nalUnit
             tryUpdateFormatDescription()
-            notifyStatus("SPS received")
+        // notifyStatus("SPS received")
 
         case 8:  // PPS
             ppsData = nalUnit
             tryUpdateFormatDescription()
-            notifyStatus("PPS received")
+        // notifyStatus("PPS received")
 
         case 9:  // AUD — start of the NEXT access unit.
             // Whatever is buffered right now is the previous, now-complete frame.
@@ -535,9 +535,9 @@ final class H264Decoder {
 
                 if status == noErr, let newFormatDescription {
                     self.formatDescription = newFormatDescription
-                    notifyStatus("Format description created successfully")
+                    // notifyStatus("Format description created successfully")
                 } else if status != noErr {
-                    notifyStatus("Format description error: \(status)")
+                    // notifyStatus("Format description error: \(status)")
                 }
             }
         }
@@ -581,7 +581,7 @@ final class H264Decoder {
         )
 
         guard status == noErr, let newSession else {
-            notifyStatus("VTDecompressionSessionCreate failed: \(status)")
+            // notifyStatus("VTDecompressionSessionCreate failed: \(status)")
             return nil
         }
 
@@ -623,7 +623,7 @@ final class H264Decoder {
         }
 
         guard blockStatus == kCMBlockBufferNoErr, let blockBuffer else {
-            notifyStatus("CMBlockBuffer error: \(blockStatus)")
+            // notifyStatus("CMBlockBuffer error: \(blockStatus)")
             return
         }
 
@@ -652,7 +652,7 @@ final class H264Decoder {
         )
 
         guard sbStatus == noErr, let sampleBuffer else {
-            notifyStatus("CMSampleBuffer error: \(sbStatus)")
+            // notifyStatus("CMSampleBuffer error: \(sbStatus)")
             return
         }
 
@@ -684,7 +684,7 @@ final class H264Decoder {
         )
 
         if decodeStatus != noErr {
-            notifyStatus("Decode error: \(decodeStatus)")
+            // notifyStatus("Decode error: \(decodeStatus)")
         }
     }
 

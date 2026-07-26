@@ -21,15 +21,6 @@ struct ContentView: View {
                         .foregroundColor(.gray)
                         .allowsHitTesting(false)
                 } else {
-                    Text(viewModel.decoderDebug)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.green)
-                        .padding(8)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(8)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 40)
-                        .allowsHitTesting(false)
                 }
             }
             .onTapGesture {
@@ -63,39 +54,10 @@ struct ContentView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
+        .statusBar(hidden: true)
         .persistentSystemOverlays(.hidden)
     }
 }
-
-// // MARK: - UIViewRepresentable
-// struct VideoDisplayView: UIViewRepresentable {
-//     var displayLayer: AVSampleBufferDisplayLayer
-
-//     func makeUIView(context: Context) -> PlayerUIView {
-//         return PlayerUIView(displayLayer: displayLayer)
-//     }
-
-//     func updateUIView(_ uiView: PlayerUIView, context: Context) {}
-
-//     class PlayerUIView: UIView {
-//         let displayLayer: AVSampleBufferDisplayLayer
-
-//         init(displayLayer: AVSampleBufferDisplayLayer) {
-//             self.displayLayer = displayLayer
-//             super.init(frame: .zero)
-//             self.layer.addSublayer(displayLayer)
-//         }
-
-//         required init?(coder: NSCoder) {
-//             fatalError("init(coder:) has not been implemented")
-//         }
-
-//         override func layoutSubviews() {
-//             super.layoutSubviews()
-//             displayLayer.frame = self.bounds
-//         }
-//     }
-// }
 
 // MARK: - UIViewRepresentable
 struct VideoDisplayView: UIViewRepresentable {
