@@ -30,3 +30,4 @@ PC/rust_core/Cargo.lock
 **/target/
 **/.build/
 /.zed/
+.gitignore
