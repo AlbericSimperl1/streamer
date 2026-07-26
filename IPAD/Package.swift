@@ -8,14 +8,14 @@ import PackageDescription
 let packageDir = URL(fileURLWithPath: #file).deletingLastPathComponent().path
 
 let package = Package(
-    name: "hyprPad",
+    name: "hyprClient",
     platforms: [
         .iOS("26")
     ],
     products: [
         .library(
-            name: "streamer",
-            targets: ["hyprPadClient"]
+            name: "hyprClient",
+            targets: ["hyprClient"]
         )
     ],
     targets: [
@@ -25,9 +25,9 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .target(
-            name: "hyprPadClient",
+            name: "hyprClient",
             dependencies: ["CRustCore"],
-            path: "Sources/hyprPadClient",
+            path: "Sources/hyprClient",
             linkerSettings: [
                 // Geef direct het absolute pad naar het bestand, niet de map!
                 .unsafeFlags(["/home/alberic/streamer/IPAD/Sources/CRustCore/lib/librust_core.a"])

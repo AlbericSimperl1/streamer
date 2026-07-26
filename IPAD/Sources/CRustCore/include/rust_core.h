@@ -23,6 +23,14 @@
 
 #define NAL_PPS 8
 
+/**
+ * Access Unit Delimiter — met `-x264-params aud=1` (zie PC-kant) zet x264
+ * er precies één van vóór elk frame, ongeacht hoeveel slice-NAL's dat frame
+ * heeft. Dit is de betrouwbare, goedkope marker om frame-grenzen te
+ * herkennen zonder de slice-header zelf te hoeven parsen.
+ */
+#define NAL_AUD 9
+
 #define HEADER_LEN 8
 
 /**
