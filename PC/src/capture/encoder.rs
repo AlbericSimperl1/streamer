@@ -67,15 +67,14 @@ impl Encoder {
                 &gop,
                 "-keyint_min",
                 &gop,
-                // `-tune zerolatency` zet in x264 standaard `sliced-threads=1`
-                // aan (slice-based threading, voor lagere latency). Bij
-                // meerdere CPU-threads splitst dat elk frame in evenveel
-                // slice-NAL-units (elk type 1/5) — en die worden dan allemaal
-                // als apart "frame" geteld/verstuurd. We forceren hier 1
-                // slice per frame zodat er écht 1 NAL-unit per encoded frame
-                // ontstaat.
+                // `-tune zerolatency` zet sliced-threads=1 aan (meerdere
+                // slice-NAL's per frame, voor lagere latency bij meerdere
+                // CPU-threads). We laten dat nu gewoon toe, maar vragen x264
+                // om vóór elk frame een Access Unit Delimiter (NAL type 9)
+                // te zetten — dat is de marker waarmee de ontvanger slices
+                // weer tot hele frames groepeert (zie H264Decoder.swift).
                 "-x264-params",
-                "sliced-threads=0:slices=1",
+                "aud=1",
                 // --- OUTPUT: kale Annex-B H.264 elementary stream naar
                 // stdout. Geen MPEG-TS, geen UDP hier — de Packetizer aan
                 // de Rust-kant doet nu zelf de framing/verzending.

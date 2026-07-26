@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use crate::nal::{NAL_IDR, NAL_NON_IDR};
+use crate::nal::NAL_AUD;
 use crate::reassembler::Reassembler;
 use crate::stats::{State, Stats};
 
@@ -87,7 +87,11 @@ impl UdpReceiver {
                             if let Some(nal) = reassembler.accept(&buf[..n]) {
                                 if let Some(&first_byte) = nal.first() {
                                     let nal_type = first_byte & 0x1F;
-                                    if nal_type == NAL_IDR || nal_type == NAL_NON_IDR {
+                                    // Eén AUD per écht frame, ongeacht het
+                                    // aantal slice-NAL's dat frame heeft
+                                    // (sliced-threads kan een frame in
+                                    // meerdere IDR/non-IDR NAL's opsplitsen).
+                                    if nal_type == NAL_AUD {
                                         frame_count += 1;
                                     }
                                     on_nalu(nal.as_ptr(), nal.len() as u32, nal_type);
@@ -110,10 +114,11 @@ impl UdpReceiver {
                         }
                     }
 
-                    // FPS ~1x/seconde — geteld op basis van daadwerkelijk
-                    // gereassembleerde IDR/non-IDR NAL-units, niet op ruwe
-                    // startcode-hits (dat was precies de bron van de
-                    // "absurd veel frames"-bug).
+                    // FPS ~1x/seconde — geteld op basis van AUD-markers
+                    // (één per écht frame), niet op ruwe startcode-hits of
+                    // op elke slice-NAL apart (dat gaf eerst de "absurd veel
+                    // frames"-bug, en zou met sliced-threads weer terugkomen
+                    // als je op IDR/non-IDR NAL's zou tellen).
                     let elapsed = last_stats.elapsed();
                     if elapsed >= std::time::Duration::from_secs(1) {
                         let fps = (frame_count as f64 / elapsed.as_secs_f64()).round() as u32;
