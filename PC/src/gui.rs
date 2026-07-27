@@ -43,46 +43,63 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 1. Detecteer de vensterstatus via de viewport input
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+
+        // 2. Voer de nodige achtergrond-ticks uit
         self.tick();
-        if self.auto_refresh {
-            ctx.request_repaint_after(Duration::from_secs(1));
+        self.poll_stop_result();
+
+        // 3. Bepaal de repaint-frequentie op basis van focus en status
+        let repaint_delay = if minimized {
+            // Slaapt 2 seconden, maar houdt de event-loop levend voor Wayland pings
+            Some(Duration::from_secs(2))
+        } else if !focused {
+            // Rustige weergave als de app op een andere werkplek/achtergrond staat
+            Some(Duration::from_millis(500))
+        } else if self.is_capturing() || self.is_stopping() {
+            // Vloeiende FPS-meter updates enkel wanneer het venster actief is
+            Some(Duration::from_millis(100))
+        } else if self.auto_refresh {
+            Some(Duration::from_secs(1))
+        } else {
+            None
+        };
+
+        if let Some(delay) = repaint_delay {
+            ctx.request_repaint_after(delay);
         }
+
         if self.should_quit() {
             self.shutdown();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let capturing = self.is_capturing();
-        let stopping = self.is_stopping();
-        if capturing || stopping {
-            ctx.request_repaint_after(Duration::from_millis(100));
-        }
-        self.poll_stop_result();
 
+        // 4. Sla de zware egui tekenpass volledig over als de GUI geminimaliseerd is
+        if minimized {
+            return;
+        }
+
+        // --- Bestaande UI rendering ---
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(BG0))
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
-
                     self.render_top_bar(ui);
-
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.add_space(4.0);
-
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 4.0;
                             self.render_config_panel(ui);
-                            self.render_controls_panel(ui, stopping);
+                            self.render_controls_panel(ui, self.is_stopping());
                         });
-
                         self.render_canvas_panel(ui);
-
                         ui.add_space(4.0);
                     });
-
-                    // self.render_bottom_bar(ui);
                     ui.add_space(4.0);
                 });
             });
@@ -92,6 +109,115 @@ impl eframe::App for App {
         self.shutdown();
     }
 }
+
+// impl eframe::App for App {
+//     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+//         self.tick();
+//         if self.auto_refresh {
+//             ctx.request_repaint_after(Duration::from_secs(1));
+//         }
+//         if self.should_quit() {
+//             self.shutdown();
+//             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+//             return;
+//         }
+//         let capturing = self.is_capturing();
+//         let stopping = self.is_stopping();
+//         if capturing || stopping {
+//             ctx.request_repaint_after(Duration::from_millis(100));
+//         }
+//         self.poll_stop_result();
+
+//         egui::CentralPanel::default()
+//             .frame(egui::Frame::none().fill(BG0))
+//             .show(ctx, |ui| {
+//                 ui.vertical(|ui| {
+//                     ui.spacing_mut().item_spacing.y = 4.0;
+
+//                     self.render_top_bar(ui);
+
+//                     ui.horizontal(|ui| {
+//                         ui.spacing_mut().item_spacing.x = 4.0;
+//                         ui.add_space(4.0);
+
+//                         ui.vertical(|ui| {
+//                             ui.spacing_mut().item_spacing.y = 4.0;
+//                             self.render_config_panel(ui);
+//                             self.render_controls_panel(ui, stopping);
+//                         });
+
+//                         self.render_canvas_panel(ui);
+
+//                         ui.add_space(4.0);
+//                     });
+
+//                     // self.render_bottom_bar(ui);
+//                     ui.add_space(4.0);
+//                 });
+//             });
+//     }
+
+//     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+//         self.shutdown();
+//     }
+// }
+
+// impl eframe::App for App {
+//     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+//         self.tick();
+
+//         // --- NIEUW: detecteer venster-status ---
+//         let window_info = frame.info().window_info;
+//         let minimized = window_info.minimized;
+//         let focused = window_info.focused;
+
+//         // Repaint rate aanpassen op basis van zichtbaarheid
+//         if minimized {
+//             // Venster geminimaliseerd: 1 repaint per 5 seconden
+//             // (tick() blijft dus periodiek draaien voor FPS-berekening)
+//             ctx.request_repaint_after(Duration::from_secs(5));
+//         } else if !focused {
+//             // Venster zichtbaar maar geen focus: 1 repaint per seconde
+//             ctx.request_repaint_after(Duration::from_secs(1));
+//         } else if self.auto_refresh {
+//             // Venster actief: normale refresh rate
+//             ctx.request_repaint_after(Duration::from_secs(1));
+//         }
+
+//         if self.should_quit() {
+//             self.shutdown();
+//             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+//             return;
+//         }
+
+//         let capturing = self.is_capturing();
+//         let stopping = self.is_stopping();
+
+//         // Alleen agressieve repaint (100ms) als venster actief is én capture draait
+//         if !minimized && (capturing || stopping) {
+//             let interval = if focused {
+//                 Duration::from_millis(100)
+//             } else {
+//                 Duration::from_millis(500) // lagere rate bij geen focus
+//             };
+//             ctx.request_repaint_after(interval);
+//         }
+
+//         self.poll_stop_result();
+
+//         // --- NIEUW: skip UI rendering bij minimalisatie ---
+//         if minimized {
+//             return;
+//         }
+
+//         // ... (bestaande UI rendering code blijft hetzelfde)
+//         egui::CentralPanel::default()
+//             .frame(egui::Frame::none().fill(BG0))
+//             .show(ctx, |ui| {
+//                 // ... bestaande code
+//             });
+//     }
+// }
 
 // panels
 

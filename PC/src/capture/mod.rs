@@ -272,51 +272,49 @@ fn run_encoder(
     let mut frames: u64 = 0;
     let mut next_target = std::time::Instant::now();
 
-    while !stop_flag.load(Ordering::SeqCst) {
-        let now = std::time::Instant::now();
-        let timeout = if next_target > now {
-            next_target - now
-        } else {
-            std::time::Duration::ZERO
-        };
+    // while !stop_flag.load(Ordering::SeqCst) {
+    //     match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+    //         Ok(new_frame) => {
+    //             if new_frame.width == width && new_frame.height == height {
+    //                 if push_frame(&mut enc, &new_frame).is_err() {
+    //                     break;
+    //                 }
+    //                 frames += 1;
+    //                 if frames % 15 == 0 {
+    //                     update_frame_count(&status, &output_path, frames);
+    //                 }
+    //             }
+    //         }
+    //         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+    //         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+    //     }
+    // }
 
-        match rx.recv_timeout(timeout) {
+    while !stop_flag.load(Ordering::SeqCst) {
+        // Blokkeer de thread exact totdat PipeWire een nieuw frame naar het kanaal pusht.
+        // We gebruiken recv_timeout sodat de thread bij stop_flag=true netjes kan afsluiten.
+        match rx.recv_timeout(std::time::Duration::from_millis(200)) {
             Ok(new_frame) => {
                 if new_frame.width == width && new_frame.height == height {
-                    last_frame = new_frame;
+                    // Stuur het frame direct door naar FFmpeg zodra het binnenkomt
+                    if push_frame(&mut enc, &new_frame).is_err() {
+                        break;
+                    }
+                    frames += 1;
+                    if frames % 15 == 0 {
+                        update_frame_count(&status, &output_path, frames);
+                    }
                 }
             }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-        }
-
-        while let Ok(new_frame) = rx.try_recv() {
-            if new_frame.width == width && new_frame.height == height {
-                last_frame = new_frame;
-            }
-        }
-
-        if push_frame(&mut enc, &last_frame).is_err() {
-            break;
-        }
-
-        frames += 1;
-        if frames % 15 == 0 {
-            update_frame_count(&status, &output_path, frames);
-        }
-
-        next_target += frame_interval;
-        let after_push = std::time::Instant::now();
-        if next_target > after_push {
-            std::thread::sleep(next_target - after_push);
-        } else if after_push.duration_since(next_target) > std::time::Duration::from_millis(500) {
-            next_target = after_push;
         }
     }
 
     update_frame_count(&status, &output_path, frames);
     finalize(&mut enc, &status, &output_path, frames, false);
     packetizer.stop();
+    let _ = enc.finish();
 }
 
 fn push_frame(enc: &mut encoder::Encoder, frame: &Frame) -> Result<(), String> {

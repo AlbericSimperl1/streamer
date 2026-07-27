@@ -22,9 +22,11 @@ impl Encoder {
                 "-pixel_format",
                 "bgr0",
                 "-video_size",
-                &size,
+                // &size,
+                &format!("{}x{}", width, height),
                 "-framerate",
-                &rate,
+                // &rate,
+                &fps.to_string(),
                 "-i",
                 "-",
                 // enucoder
@@ -34,6 +36,12 @@ impl Encoder {
                 "ultrafast",
                 "-tune",
                 "zerolatency",
+                "-bf",
+                "0", // Geen B-frames (voorkomt reordering vertraging)
+                "-rc-lookahead",
+                "0", // Geen frame lookahead
+                "-x264-params",
+                "aud=1:sliced-threads=0", // Directe NAL dispatch
                 // bgr0 -> yuv420p
                 "-pix_fmt",
                 "yuv420p",

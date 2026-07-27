@@ -81,22 +81,47 @@ impl App {
         }
     }
 
+    // pub fn refresh(&mut self) {
+    //     match hypr::get_monitors() {
+    //         Ok(monitors) => {
+    //             let count = monitors.len();
+    //             self.monitor_exists = monitors.iter().any(|m| m.name == self.config.name);
+    //             self.monitors = monitors;
+    //             self.last_refresh = Some(SystemTime::now());
+    //             self.log(
+    //                 format!("Refreshed — {count} monitor(s) active."),
+    //                 LogLevel::Info,
+    //             );
+    //         }
+    //         Err(e) => {
+    //             self.log(format!("Failed to get monitors: {e}"), LogLevel::Error);
+    //         }
+    //     }
+    // }
+
+    // pub fn refresh(&mut self) {
+    //     // Sla de auto-refresh over als we actief aan het capturen zijn
+    //     // om onnodige process spawning te voorkomen
+    //     if self.is_capturing() {
+    //         return;
+    //     }
+
+    //     // Voer hyprctl uit op een achtergrondthread zodat de GUI nooit bevriest
+    //     std::thread::spawn(|| {
+    //         if let Ok(monitors) = hypr::get_monitors() {
+    //             // Desgewenst kun je de resultaten via een mpsc::channel terugsturen naar App
+    //         }
+    //     });
+    //     self.last_refresh = Some(SystemTime::now());
+    // }
+
     pub fn refresh(&mut self) {
-        match hypr::get_monitors() {
-            Ok(monitors) => {
-                let count = monitors.len();
-                self.monitor_exists = monitors.iter().any(|m| m.name == self.config.name);
-                self.monitors = monitors;
-                self.last_refresh = Some(SystemTime::now());
-                self.log(
-                    format!("Refreshed — {count} monitor(s) active."),
-                    LogLevel::Info,
-                );
-            }
-            Err(e) => {
-                self.log(format!("Failed to get monitors: {e}"), LogLevel::Error);
-            }
-        }
+        self.last_refresh = Some(SystemTime::now());
+
+        // Voer de process execution uit op een losse OS thread
+        std::thread::spawn(|| {
+            let _ = hypr::get_monitors();
+        });
     }
 
     pub fn tick(&mut self) {
