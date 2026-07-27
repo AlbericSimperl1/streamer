@@ -1,6 +1,6 @@
 language = "C"
 header = """/*
- * rust_core.h — C-ABI tussen de Rust core en de Swift app (hyprPadClient).
+ * rust_core.h — C-ABI tussen de Rust core en de Swift app (hyprClient).
  * Gegenereerd door cbindgen. Niet handmatig bewerken.
  */"""
 include_guard = "RUST_CORE_H"

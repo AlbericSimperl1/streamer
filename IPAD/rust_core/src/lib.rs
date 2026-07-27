@@ -1,4 +1,4 @@
-//! rust_core — C-ABI tussen Rust en Swift voor hyprPadClient (iPadOS 26+).
+//! rust_core — C-ABI tussen Rust en Swift voor hyprClient (iPadOS 26+).
 //!
 //! De Swift app roept `hyprpad_start()` aan met een `HyprpadCallbacks` struct
 //! (één NALU-callback) en een optionele log-callback. Stats gaan via polling

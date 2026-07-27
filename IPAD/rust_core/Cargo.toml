@@ -2,7 +2,7 @@
 name = "rust_core"
 version = "0.1.0"
 edition = "2021"
-description = "Rust core voor hyprPadClient: UDP ontvangst, lock-free ring, Annex-B NALU parser"
+description = "Rust core voor hyprClient: UDP ontvangst, lock-free ring, Annex-B NALU parser"
 
 [lib]
 name = "rust_core"
