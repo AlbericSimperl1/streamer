@@ -31,3 +31,4 @@ PC/rust_core/Cargo.lock
 **/.build/
 /.zed/
 .gitignore
+/bin/
