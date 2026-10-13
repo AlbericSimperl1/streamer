@@ -23,8 +23,8 @@ IPAD/cmd.txt
 # PC Subproject (Rust / Cargo)
 # ==========================================
 PC/target/
-PC/rust_core/target/
-PC/rust_core/Cargo.lock
+PC/src/target/
+PC/src/Cargo.lock
 
 # Generic Fallbacks (pakt target/ en .build/ overal in het project)
 **/target/
