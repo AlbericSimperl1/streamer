@@ -1,5 +1,7 @@
 use crate::capture;
 use crate::hypr;
+use crate::moonlight::server::{HostConfig, HostServer};
+use crate::moonlight::{HostShared, HostStatus};
 use crate::types::{LogEntry, LogLevel, MonitorConfig, MonitorJson};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
@@ -15,6 +17,16 @@ pub struct App {
     pub auto_refresh: bool,
     pub last_refresh: Option<SystemTime>,
 
+    // Moonlight host
+    pub host: HostShared,
+    host_server: Option<HostServer>,
+    /// Name shown in Moonlight's host list.
+    pub host_name: String,
+    /// PIN typed into the pairing dialog.
+    pub pin_input: String,
+
+    // Capture session. Started by the /launch handler once the protocol
+    // server exists; the GUI no longer starts it by hand.
     pub capture: Option<capture::CaptureSession>,
     pub capture_output_path: String,
     pub stop_result_rx: Option<mpsc::Receiver<capture::CaptureStatus>>,
@@ -47,6 +59,10 @@ impl App {
             log_entries: Vec::new(),
             auto_refresh: true,
             last_refresh: None,
+            host: HostShared::new(),
+            host_server: None,
+            host_name: default_hostname(),
+            pin_input: String::new(),
             capture: None,
             capture_output_path: default_capture_path(),
             stop_result_rx: None,
@@ -168,6 +184,10 @@ impl App {
         self.stop_result_rx.is_some()
     }
 
+    pub fn host_running(&self) -> bool {
+        self.host_server.is_some()
+    }
+
     pub fn apply_config(&mut self) {
         if !self.monitor_exists {
             if let Err(e) = hypr::create_headless_output(&self.config.name) {
@@ -207,46 +227,76 @@ impl App {
         }
     }
 
-    pub fn do_start_capture(&mut self) {
-        if self.is_capturing() {
-            self.log("Capture already running.", LogLevel::Warning);
-            return;
-        }
-        if !self.monitor_exists {
-            self.log(
-                "Create the virtual monitor first before capturing.",
-                LogLevel::Warning,
-            );
-            return;
-        }
+    // Moonlight host
 
-        let path = self.capture_output_path.clone();
-        self.log(format!("▶ Starting capture → {path}"), LogLevel::Info);
+    pub fn do_start_host(&mut self) {
+        if self.host_server.is_some() {
+            self.log("Host already running.", LogLevel::Warning);
+            return;
+        }
+        let cfg = HostConfig {
+            hostname: self.host_name.trim().to_string(),
+            ..Default::default()
+        };
         self.log(
-            "  A portal popup will appear — pick the virtual monitor.",
+            format!("▶ Starting Moonlight host '{}'...", cfg.hostname),
             LogLevel::Info,
         );
-        let target_ip = self.config.ip.clone(); // <-- Dit ontbrak nog
-        match capture::CaptureSession::start(path.clone(), target_ip) {
-            Ok(session) => {
-                self.capture = Some(session);
+        match HostServer::start(self.host.clone(), cfg) {
+            Ok(server) => {
+                self.host_server = Some(server);
                 self.log(
-                    "✓ Capture session started. Select the monitor in the popup.",
+                    "✓ Host started. Add this PC in Moonlight and pair.",
                     LogLevel::Success,
                 );
             }
-            Err(e) => {
-                self.log(format!("✗ Failed to start capture: {e}"), LogLevel::Error);
-            }
+            Err(e) => self.log(format!("✗ Failed to start host: {e}"), LogLevel::Error),
         }
+    }
+
+    pub fn do_stop_host(&mut self) {
+        if self.is_capturing() {
+            self.do_stop_capture();
+        }
+        if let Some(mut server) = self.host_server.take() {
+            server.stop();
+            self.log("Host stopped.", LogLevel::Info);
+        }
+        self.pin_input.clear();
+    }
+
+    pub fn do_submit_pin(&mut self) {
+        let pin = self.pin_input.clone();
+        let name = self
+            .host
+            .pending_pairing()
+            .map(|(n, _)| n)
+            .unwrap_or_default();
+        if self.host.submit_pin(&pin) {
+            self.log(format!("Pairing PIN sent for '{name}'."), LogLevel::Info);
+        } else {
+            self.log(
+                "Invalid PIN or no pairing request pending.",
+                LogLevel::Warning,
+            );
+        }
+        self.pin_input.clear();
+    }
+
+    pub fn do_reject_pairing(&mut self) {
+        self.host.reject_pairing();
+        self.pin_input.clear();
+        self.log("Pairing request rejected.", LogLevel::Warning);
+    }
+
+    pub fn do_unpair(&mut self, unique_id: &str, name: &str) {
+        self.host.unpair(unique_id);
+        self.log(format!("Unpaired '{name}'."), LogLevel::Info);
     }
 
     pub fn do_stop_capture(&mut self) {
         if let Some(mut session) = self.capture.take() {
-            self.log(
-                "▶ Stopping capture (finalizing MP4 in background)...",
-                LogLevel::Info,
-            );
+            self.log("▶ Stopping capture...", LogLevel::Info);
 
             let (tx, rx) = mpsc::channel();
             self.stop_result_rx = Some(rx);
@@ -270,7 +320,7 @@ impl App {
                 match status {
                     capture::CaptureStatus::Finished { path, frames } => {
                         self.log(
-                            format!("✓ Capture saved: {path} ({frames} frames)"),
+                            format!("✓ Capture ended ({frames} frames)"),
                             LogLevel::Success,
                         );
                     }
@@ -282,9 +332,7 @@ impl App {
                     }
                 }
             }
-            Err(mpsc::TryRecvError::Empty) => {
-                // Nog bezig — wachten.
-            }
+            Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.stop_result_rx = None;
                 self.log("✗ Capture stop thread ended unexpectedly.", LogLevel::Error);
@@ -298,6 +346,9 @@ impl App {
         }
         self.shutdown_done = true;
 
+        if let Some(mut server) = self.host_server.take() {
+            server.stop();
+        }
         if let Some(mut session) = self.capture.take() {
             session.stop();
             println!("✓ Capture sessie gestopt bij afsluiten.");
@@ -317,6 +368,7 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
+        self.host_server.take();
         if self.capture.is_some() {
             self.capture.take();
         }
@@ -325,6 +377,15 @@ impl Drop for App {
             let _ = hypr::remove_monitor(&name);
         }
     }
+}
+
+fn default_hostname() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .unwrap_or_else(|| "hyprstream".into())
 }
 
 fn default_capture_path() -> String {

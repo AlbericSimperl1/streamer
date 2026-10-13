@@ -17,7 +17,9 @@ pub struct MonitorJson {
     pub vrr: bool,
 }
 
-/// Monitor parameters
+/// Monitor parameters. With Moonlight the client picks resolution/fps per
+/// session, so width/height/fps are only the defaults for the virtual monitor.
+/// The target IP is gone: the client address is learned from its packets.
 #[derive(Debug, Clone)]
 pub struct MonitorConfig {
     pub name: String,
@@ -27,7 +29,6 @@ pub struct MonitorConfig {
     pub x: i32,
     pub y: i32,
     pub scale: f32,
-    pub ip: String,
 }
 
 impl Default for MonitorConfig {
@@ -40,7 +41,6 @@ impl Default for MonitorConfig {
             x: -2000,
             y: 0,
             scale: 1.0,
-            ip: "".into(),
         }
     }
 }
@@ -49,7 +49,6 @@ impl MonitorConfig {
     /// `name,WxH@fps,XxY,scale`.
     pub fn to_keyword(&self) -> String {
         format!(
-            // "hyprctl keyword monitor \"{name},{W}x{H}@{fps},{X}x{Y},{scale}\"",
             "{},{}x{}@{},{}x{},{}",
             self.name, self.width, self.height, self.fps, self.x, self.y, self.scale
         )

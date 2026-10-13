@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::moonlight::{HostStatus, DEFAULT_HTTP_PORT};
 use eframe::egui;
 use std::time::Duration;
 
@@ -29,6 +30,9 @@ const YEL: egui::Color32 = egui::Color32::from_rgb(220, 180, 80);
 const RED: egui::Color32 = egui::Color32::from_rgb(220, 90, 90);
 const RED_D: egui::Color32 = egui::Color32::from_rgb(65, 28, 28);
 
+/// Height of the "moonlight" strip under the position canvas.
+const CLIENTS_H: f32 = 118.0;
+
 // app
 impl App {
     pub fn new() -> Self {
@@ -57,6 +61,11 @@ impl eframe::App for App {
         if capturing || stopping {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
+        // The protocol server raises pairing requests from another thread;
+        // poll often enough that the PIN dialog appears promptly.
+        if self.host_running() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
         self.poll_stop_result();
 
         egui::CentralPanel::default()
@@ -77,19 +86,34 @@ impl eframe::App for App {
                             self.render_controls_panel(ui, stopping);
                         });
 
-                        self.render_canvas_panel(ui);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 4.0;
+                            let canvas_h = (ui.available_height() - CLIENTS_H - 4.0).max(120.0);
+                            self.render_canvas_panel(ui, canvas_h);
+                            self.render_clients_panel(ui, CLIENTS_H);
+                        });
 
                         ui.add_space(4.0);
                     });
 
-                    // self.render_bottom_bar(ui);
                     ui.add_space(4.0);
                 });
             });
+
+        self.render_pairing_dialog(ctx);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.shutdown();
+    }
+}
+
+fn host_status_label(status: &HostStatus) -> (&'static str, egui::Color32) {
+    match status {
+        HostStatus::Stopped => ("stopped", T3),
+        HostStatus::Starting => ("starting", YEL),
+        HostStatus::Listening => ("listening", GRN),
+        HostStatus::Error(_) => ("error", RED),
     }
 }
 
@@ -111,11 +135,14 @@ impl App {
             egui::pos2(rect.max.x - 8.0, rect.max.y),
         );
 
+        let session = self.host.session();
+        let host_status = self.host.status();
+
         ui.allocate_ui_at_rect(inner, |ui| {
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
 
-                let (dot, dot_col) = if self.is_capturing() {
+                let (dot, dot_col) = if self.is_capturing() || session.is_some() {
                     ("●", ACC)
                 } else if self.monitor_exists {
                     ("●", GRN)
@@ -177,14 +204,23 @@ impl App {
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (cap_text, cap_col) = if self.is_capturing() {
-                        ("● capturing", ACC)
+                    let (cap_text, cap_col): (String, egui::Color32) = if let Some(s) = &session {
+                        (format!("● streaming → {}", s.client_name), ACC)
                     } else if self.is_stopping() {
-                        ("● stopping", YEL)
-                    } else if self.monitor_exists {
-                        ("● ready", GRN)
+                        ("● stopping".into(), YEL)
                     } else {
-                        ("idle", T3)
+                        match &host_status {
+                            HostStatus::Listening => ("● listening".into(), GRN),
+                            HostStatus::Starting => ("● starting".into(), YEL),
+                            HostStatus::Error(_) => ("● error".into(), RED),
+                            HostStatus::Stopped => {
+                                if self.monitor_exists {
+                                    ("● ready".into(), GRN)
+                                } else {
+                                    ("idle".into(), T3)
+                                }
+                            }
+                        }
                     };
                     ui.label(
                         egui::RichText::new(cap_text)
@@ -196,61 +232,6 @@ impl App {
             });
         });
     }
-
-    // fn render_bottom_bar(&self, ui: &mut egui::Ui) {
-    //     let (rect, _) =
-    //         ui.allocate_exact_size(egui::vec2(ui.available_width(), 22.0), egui::Sense::hover());
-
-    //     ui.painter().rect_filled(rect, 0.0, BG1);
-    //     ui.painter().line_segment(
-    //         [
-    //             egui::pos2(rect.min.x, rect.min.y),
-    //             egui::pos2(rect.max.x, rect.min.y),
-    //         ],
-    //         egui::Stroke::new(0.5_f32, BRD),
-    //     );
-
-    //     let inner = egui::Rect::from_min_max(
-    //         egui::pos2(rect.min.x + 8.0, rect.min.y),
-    //         egui::pos2(rect.max.x - 8.0, rect.max.y),
-    //     );
-
-    //     ui.allocate_ui_at_rect(inner, |ui| {
-    //         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-    //             ui.spacing_mut().item_spacing.x = 8.0;
-
-    //             ui.label(
-    //                 egui::RichText::new(format!("pos: ({}, {})", self.config.x, self.config.y))
-    //                     .color(T2)
-    //                     .monospace()
-    //                     .size(11.0),
-    //             );
-    //             ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
-    //             ui.label(
-    //                 egui::RichText::new(format!("scale: {:.2}", self.config.scale))
-    //                     .color(T2)
-    //                     .monospace()
-    //                     .size(11.0),
-    //             );
-    //             ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
-    //             ui.label(
-    //                 egui::RichText::new("grid: 90px")
-    //                     .color(T2)
-    //                     .monospace()
-    //                     .size(11.0),
-    //             );
-
-    //             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-    //                 ui.label(
-    //                     egui::RichText::new("drag canvas to reposition")
-    //                         .color(T3)
-    //                         .monospace()
-    //                         .size(10.0),
-    //                 );
-    //             });
-    //         });
-    //     });
-    // }
 
     fn render_config_panel(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
@@ -304,29 +285,46 @@ impl App {
         });
         ui.add_space(6.0);
 
-        config_label(ui, "target ip");
+        // Replaces the old "target ip" row: this is the name Moonlight shows
+        // in its host list. Locked while the host is running.
+        config_label(ui, "host name");
         ui.horizontal(|ui| {
             tree_indent(ui);
-            let response = ui.add(
-                egui::TextEdit::singleline(&mut self.config.ip)
-                    .desired_width(130.0)
-                    .frame(false)
-                    .text_color(T1)
-                    .hint_text(
-                        egui::RichText::new("192.168.x.x")
-                            .color(T3)
-                            .monospace()
-                            .size(11.0),
+            let running = self.host_running();
+            ui.add_enabled_ui(!running, |ui| {
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.host_name)
+                        .desired_width(130.0)
+                        .frame(false)
+                        .text_color(T1)
+                        .hint_text(
+                            egui::RichText::new("shown in moonlight")
+                                .color(T3)
+                                .monospace()
+                                .size(11.0),
+                        ),
+                );
+                let line_y = response.rect.bottom();
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(response.rect.min.x, line_y),
+                        egui::pos2(response.rect.max.x, line_y),
+                    ],
+                    egui::Stroke::new(
+                        0.5_f32,
+                        if running {
+                            GRN
+                        } else if !self.host_name.is_empty() {
+                            ACC
+                        } else {
+                            BRD
+                        },
                     ),
-            );
-            let line_y = response.rect.bottom();
-            ui.painter().line_segment(
-                [
-                    egui::pos2(response.rect.min.x, line_y),
-                    egui::pos2(response.rect.max.x, line_y),
-                ],
-                egui::Stroke::new(0.5_f32, if !self.config.ip.is_empty() { ACC } else { BRD }),
-            );
+                );
+            });
+            if self.host_running() {
+                ui.label(egui::RichText::new("✓").color(GRN).monospace().size(11.0));
+            }
         });
         ui.add_space(6.0);
 
@@ -389,11 +387,13 @@ impl App {
     }
 
     fn render_controls(&mut self, ui: &mut egui::Ui, stopping: bool) {
+        let host_on = self.host_running();
         let can_apply = !self.config.name.is_empty() && !stopping;
         let can_remove = self.monitor_exists && !self.is_capturing() && !stopping;
-        let can_start =
-            self.monitor_exists && !self.is_capturing() && !stopping && !self.config.ip.is_empty();
-        let can_stop = self.is_capturing() && !stopping;
+        // Starting/stopping now controls the Moonlight host, not a capture to
+        // a fixed IP. Capture is started by Moonlight's /launch.
+        let can_start = !host_on && !stopping && !self.host_name.trim().is_empty();
+        let can_stop = host_on && !stopping;
 
         let btn_width = (272.0 - 4.0) / 2.0;
 
@@ -418,19 +418,19 @@ impl App {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
 
-            if custom_button(ui, "start", can_start, GRN, btn_width).clicked() {
-                self.do_start_capture();
+            if custom_button(ui, "start host", can_start, GRN, btn_width).clicked() {
+                self.do_start_host();
             }
-            if custom_button(ui, "stop", can_stop, RED, btn_width).clicked() {
-                self.do_stop_capture();
+            if custom_button(ui, "stop host", can_stop, RED, btn_width).clicked() {
+                self.do_stop_host();
             }
         });
     }
 
-    fn render_canvas_panel(&mut self, ui: &mut egui::Ui) {
+    fn render_canvas_panel(&mut self, ui: &mut egui::Ui, panel_h: f32) {
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_height(ui.available_height());
+            ui.set_height((panel_h - 16.0).max(60.0));
             ui.vertical(|ui| {
                 section_header(ui, "position");
 
@@ -647,6 +647,189 @@ impl App {
             });
         });
     }
+
+    /// Paired clients + session status. Same panel/section-header/tree style
+    /// as the rest of the UI.
+    fn render_clients_panel(&mut self, ui: &mut egui::Ui, panel_h: f32) {
+        let status = self.host.status();
+        let clients = self.host.paired_clients();
+        let session = self.host.session();
+        let mut unpair: Option<(String, String)> = None;
+
+        panel_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_height(panel_h - 16.0);
+            ui.vertical(|ui| {
+                section_header(ui, "moonlight");
+
+                let (label, col) = host_status_label(&status);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.label(egui::RichText::new("●").color(col).monospace().size(10.0));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{label} · tcp {DEFAULT_HTTP_PORT} · {} paired",
+                            clients.len()
+                        ))
+                        .color(T2)
+                        .monospace()
+                        .size(11.0),
+                    );
+                });
+
+                if let HostStatus::Error(e) = &status {
+                    ui.label(egui::RichText::new(e).color(RED).monospace().size(10.0));
+                }
+
+                if let Some(s) = &session {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "▶ {}  {}×{} @ {}  {:.0} Mbps  {}",
+                            s.client_name,
+                            s.width,
+                            s.height,
+                            s.fps,
+                            s.bitrate_kbps as f32 / 1000.0,
+                            s.client_addr
+                        ))
+                        .color(ACC)
+                        .monospace()
+                        .size(11.0),
+                    );
+                }
+
+                ui.add_space(2.0);
+
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if clients.is_empty() {
+                            ui.horizontal(|ui| {
+                                tree_indent(ui);
+                                ui.label(
+                                    egui::RichText::new("no paired clients")
+                                        .color(T3)
+                                        .monospace()
+                                        .size(11.0),
+                                );
+                            });
+                        }
+                        for c in &clients {
+                            ui.horizontal(|ui| {
+                                tree_indent(ui);
+                                ui.label(
+                                    egui::RichText::new(&c.name)
+                                        .color(T1)
+                                        .monospace()
+                                        .size(11.0),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if custom_icon_button(ui, "×", RED)
+                                            .on_hover_text("unpair")
+                                            .clicked()
+                                        {
+                                            unpair = Some((c.unique_id.clone(), c.name.clone()));
+                                        }
+                                    },
+                                );
+                            });
+                        }
+                    });
+            });
+        });
+
+        if let Some((id, name)) = unpair {
+            self.do_unpair(&id, &name);
+        }
+    }
+
+    /// Modal PIN prompt. Replaces Sunshine's web UI PIN page: Moonlight shows
+    /// a 4-digit PIN, the user types it here.
+    fn render_pairing_dialog(&mut self, ctx: &egui::Context) {
+        let Some((client_name, _id)) = self.host.pending_pairing() else {
+            if !self.pin_input.is_empty() {
+                self.pin_input.clear();
+            }
+            return;
+        };
+
+        ctx.request_repaint_after(Duration::from_millis(100));
+
+        egui::Window::new("pairing")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .frame(
+                panel_frame()
+                    .fill(BG2)
+                    .stroke(egui::Stroke::new(1.0_f32, ACC)),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(240.0);
+                ui.vertical(|ui| {
+                    section_header(ui, "pairing request");
+
+                    ui.label(
+                        egui::RichText::new(&client_name)
+                            .color(T0)
+                            .monospace()
+                            .size(12.0),
+                    );
+                    ui.add_space(2.0);
+                    config_label(ui, "enter the PIN shown in moonlight");
+                    ui.add_space(6.0);
+
+                    let mut enter_pressed = false;
+                    ui.horizontal(|ui| {
+                        tree_indent(ui);
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut self.pin_input)
+                                .desired_width(70.0)
+                                .char_limit(4)
+                                .frame(false)
+                                .font(egui::FontId::monospace(16.0))
+                                .text_color(ACC)
+                                .hint_text(
+                                    egui::RichText::new("0000").color(T3).monospace().size(16.0),
+                                ),
+                        );
+                        let line_y = response.rect.bottom();
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(response.rect.min.x, line_y),
+                                egui::pos2(response.rect.max.x, line_y),
+                            ],
+                            egui::Stroke::new(1.0_f32, ACC),
+                        );
+                        if self.pin_input.is_empty() {
+                            response.request_focus();
+                        }
+                        enter_pressed =
+                            response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    });
+                    self.pin_input.retain(|c| c.is_ascii_digit());
+
+                    ui.add_space(8.0);
+
+                    let valid = self.pin_input.len() == 4;
+                    let btn_width = (232.0 - 4.0) / 2.0;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if custom_button(ui, "accept", valid, GRN, btn_width).clicked()
+                            || (enter_pressed && valid)
+                        {
+                            self.do_submit_pin();
+                        }
+                        if custom_button(ui, "reject", true, RED, btn_width).clicked() {
+                            self.do_reject_pairing();
+                        }
+                    });
+                });
+            });
+    }
 }
 
 fn section_header(ui: &mut egui::Ui, title: &str) {
@@ -710,7 +893,9 @@ fn configure_style(ctx: &egui::Context, scale: f32) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
         "custom_font".to_owned(),
-        egui::FontData::from_static(include_bytes!("/usr/share/fonts/mononoki-Regular.ttf")),
+        egui::FontData::from_static(include_bytes!(
+            "/usr/share/fonts/Mononoki/mononoki-Regular.ttf"
+        )),
     );
     fonts
         .families

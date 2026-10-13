@@ -8,6 +8,7 @@ mod app;
 mod capture;
 mod gui;
 mod hypr;
+mod moonlight;
 mod types;
 
 fn main() -> Result<(), eframe::Error> {
