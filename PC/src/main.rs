@@ -20,6 +20,10 @@ fn main() -> Result<(), eframe::Error> {
             .with_app_id("hyprland-display-streamer")
             .with_inner_size([scale * w, scale * h])
             .with_min_inner_size([w / scale, h / scale]),
+        // Vsync blocks eglSwapBuffers on hidden Wayland surfaces (no frame
+        // callbacks), which freezes the event loop and triggers Hyprland's
+        // "Application Not Responding" dialog.
+        vsync: false,
         ..Default::default()
     };
 

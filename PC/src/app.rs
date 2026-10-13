@@ -17,6 +17,9 @@ pub struct App {
     pub auto_refresh: bool,
     pub last_refresh: Option<SystemTime>,
 
+    /// In-flight background `hyprctl monitors` query (never block the UI thread).
+    refresh_rx: Option<mpsc::Receiver<Result<Vec<MonitorJson>, String>>>,
+
     // Moonlight host
     pub host: HostShared,
     host_server: Option<HostServer>,
@@ -59,6 +62,7 @@ impl App {
             log_entries: Vec::new(),
             auto_refresh: true,
             last_refresh: None,
+            refresh_rx: None,
             host: HostShared::new(),
             host_server: None,
             host_name: default_hostname(),
@@ -97,30 +101,57 @@ impl App {
         }
     }
 
+    /// Starts a non-blocking monitor refresh. The result is applied in
+    /// `poll_refresh()` (called from `tick()`).
     pub fn refresh(&mut self) {
-        match hypr::get_monitors() {
-            Ok(monitors) => {
-                let count = monitors.len();
+        if self.refresh_rx.is_some() {
+            return; // already in flight
+        }
+        let (tx, rx) = mpsc::channel();
+        self.refresh_rx = Some(rx);
+        let spawned = std::thread::Builder::new()
+            .name("hyprpad-refresh".into())
+            .spawn(move || {
+                let _ = tx.send(hypr::get_monitors());
+            });
+        if spawned.is_err() {
+            self.refresh_rx = None;
+        }
+    }
+
+    fn poll_refresh(&mut self) {
+        let Some(rx) = &self.refresh_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(monitors)) => {
+                self.refresh_rx = None;
                 self.monitor_exists = monitors.iter().any(|m| m.name == self.config.name);
                 self.monitors = monitors;
                 self.last_refresh = Some(SystemTime::now());
-                self.log(
-                    format!("Refreshed — {count} monitor(s) active."),
-                    LogLevel::Info,
-                );
             }
-            Err(e) => {
+            Ok(Err(e)) => {
+                self.refresh_rx = None;
+                self.last_refresh = Some(SystemTime::now());
                 self.log(format!("Failed to get monitors: {e}"), LogLevel::Error);
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.refresh_rx = None;
+                self.last_refresh = Some(SystemTime::now());
             }
         }
     }
 
     pub fn tick(&mut self) {
-        if self.auto_refresh {
-            if let Some(last) = self.last_refresh {
-                if last.elapsed().unwrap_or_default() >= Duration::from_secs(2) {
-                    self.refresh();
-                }
+        self.poll_refresh();
+
+        if self.auto_refresh && self.refresh_rx.is_none() {
+            let due = self.last_refresh.map_or(true, |l| {
+                l.elapsed().unwrap_or_default() >= Duration::from_secs(2)
+            });
+            if due {
+                self.refresh();
             }
         }
 
