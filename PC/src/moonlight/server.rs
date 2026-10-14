@@ -1,16 +1,13 @@
-//! Moonlight/GameStream protocol server: STUB.
+//! Moonlight/GameStream protocol server.
 //!
-//! Only binds the HTTP port so port conflicts (e.g. a running Sunshine) show
-//! up in the GUI. Every connection is dropped. The real implementation goes
-//! where the TODOs are:
+//! Done: identity, plain HTTP `/serverinfo`, mDNS advertisement (so Moonlight
+//! finds the host automatically).
 //!
-//!   TODO(identity)  generate/load RSA-2048 cert + unique id in `config_dir()`
-//!   TODO(mdns)      advertise `_nvstream._tcp` on `http_port`
-//!   TODO(http)      /serverinfo, /applist, /launch, /resume, /cancel, /unpair
 //!   TODO(pair)      /pair: call `shared.request_pairing(..)`, block on the
 //!                   receiver, derive the AES key from salt + PIN, finish the
 //!                   handshake, then `shared.add_paired(..)`
 //!   TODO(https)     rustls on 47984 pinned to `shared.paired_clients()`
+//!   TODO(http)      /applist, /launch, /resume, /cancel, /unpair
 //!   TODO(rtsp)      TCP 48010
 //!   TODO(session)   on /launch: `shared.set_session(Some(..))`, create the
 //!                   headless monitor, start capture; on /cancel clear it
@@ -18,6 +15,9 @@
 //! Dev aid: run with `HYPRSTREAM_FAKE_PAIR=1` to make the host raise a fake
 //! pairing request 2 s after start, so the PIN dialog can be tested.
 
+use super::http::{self, HttpCtx};
+use super::identity;
+use super::mdns::MdnsAdvertiser;
 use super::{unix_now, HostShared, HostStatus, PairDecision, PairedClient};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -51,17 +51,31 @@ impl HostServer {
     pub fn start(shared: HostShared, cfg: HostConfig) -> Result<Self, String> {
         shared.set_status(HostStatus::Starting);
 
-        let listener = TcpListener::bind(("0.0.0.0", cfg.http_port)).map_err(|e| {
-            let msg = format!(
-                "cannot bind TCP {} (is Sunshine running?): {e}",
-                cfg.http_port
-            );
+        let fail = |msg: String| {
             shared.set_status(HostStatus::Error(msg.clone()));
             msg
+        };
+
+        let identity = identity::load_or_create().map_err(|e| fail(format!("identity: {e}")))?;
+
+        let listener = TcpListener::bind(("0.0.0.0", cfg.http_port)).map_err(|e| {
+            fail(format!(
+                "cannot bind TCP {} (is Sunshine running?): {e}",
+                cfg.http_port
+            ))
         })?;
         listener
             .set_nonblocking(true)
-            .map_err(|e| format!("set_nonblocking: {e}"))?;
+            .map_err(|e| fail(format!("set_nonblocking: {e}")))?;
+
+        let mdns = MdnsAdvertiser::start(&cfg.hostname, cfg.http_port).map_err(|e| fail(e))?;
+
+        let ctx = Arc::new(HttpCtx {
+            hostname: cfg.hostname.clone(),
+            unique_id: identity.unique_id.clone(),
+            http_port: cfg.http_port,
+            shared: shared.clone(),
+        });
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_t = stop.clone();
@@ -71,6 +85,7 @@ impl HostServer {
         let handle = thread::Builder::new()
             .name("hyprstream-host".into())
             .spawn(move || {
+                let _mdns = mdns; // keep advertising until the thread ends
                 shared_t.set_status(HostStatus::Listening);
                 log::info!("host '{}' listening on TCP {}", cfg.hostname, cfg.http_port);
 
@@ -80,12 +95,15 @@ impl HostServer {
 
                 while !stop_t.load(Ordering::Relaxed) {
                     match listener.accept() {
-                        Ok((conn, addr)) => {
-                            log::warn!("connection from {addr}: protocol handlers not implemented");
-                            drop(conn);
+                        Ok((conn, _addr)) => {
+                            let _ = conn.set_nonblocking(false);
+                            let ctx = ctx.clone();
+                            let _ = thread::Builder::new()
+                                .name("hyprstream-http".into())
+                                .spawn(move || http::handle(conn, &ctx));
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            thread::sleep(Duration::from_millis(100));
+                            thread::sleep(Duration::from_millis(50));
                         }
                         Err(e) => {
                             log::warn!("accept error: {e}");

@@ -19,6 +19,10 @@ log = "0.4"
 ctrlc = "3"
 memchr = "2"
 
+# moonlight host
+openssl = "0.10"
+mdns-sd = "0.13"
+
 [profile.release]
 opt-level = 3
 lto = true

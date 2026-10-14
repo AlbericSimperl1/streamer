@@ -1,0 +1,83 @@
+# Plan: Moonlight host interface with a minimal HTTPS footprint
+
+HTTPS can't be removed entirely, but you can confine it to one small module. In Sunshine's `nvhttp.cpp`, `applist` and `launch` are served over the HTTPS request types, so Moonlight clients use TLS for those calls. The Wolf project's protocol docs say the same: the last pairing step runs over HTTPS, and every HTTPS request is checked for a valid client certificate from a paired client. The `applist` and `launch` handlers take HTTPS requests, and the final pairing phase runs over HTTPS with a client-certificate check.
+
+The TLS you need is also much simpler than normal web TLS:
+- Both certificates are **self-signed and pinned**. There is no CA chain, no hostname check and no ACME.
+- The client's certificate is only an identity. You accept any cert in the handshake, then compare its fingerprint against your paired-clients store.
+- Everything else is plain HTTP, TCP or UDP.
+
+## What is plain and what is TLS
+
+| Part | Transport |
+|---|---|
+| `/serverinfo` (unpaired view), `/pair` phases 1-4 | Plain HTTP (47989). Security is application-level: PIN-derived AES key, SHA-256, RSA signatures |
+| `/pair` final challenge, `/serverinfo` (paired), `/applist`, `/launch`, `/resume`, `/cancel` | HTTPS (47984), pinned client cert |
+| RTSP, RTP video/audio, ENet control | Plain TCP/UDP, optional AES with the `rikey` from `/launch` |
+
+## Plan
+
+### Phase 0: reference harness (before writing code)
+- Run Sunshine once and a Moonlight client against it, with debug logging on. Capture UDP in Wireshark.
+- Read Wolf's protocol docs (pairing, RTSP, control, RTP) as a readable spec. Moonlight-XboxOG's `host_pairing.cpp` shows the client side of pairing and launch, which is useful for testing your server.
+- Keep moonlight-common-c as the final authority on packet layouts.
+
+### Phase 1: identity and plain HTTP
+- Module `moonlight/identity.rs`: generate and persist an RSA-2048 self-signed cert, host unique ID, and a paired-clients store. Check that `rcgen` can produce RSA keys with your crypto backend; if not, use the `openssl` crate for this one step.
+- Module `moonlight/http.rs`: a tiny HTTP/1.1 server. The requests are simple GETs with query strings and XML responses, so a hand-rolled parser on `tokio::net::TcpListener` is enough and avoids a full web framework.
+- Implement `/serverinfo` (HTTP view) and mDNS advertisement (`_nvstream._tcp`).
+- Done when Moonlight lists your host.
+
+### Phase 2: pairing over HTTP
+- Implement the four app-level steps: server cert exchange, client challenge, server challenge response, client pairing secret. Use RustCrypto crates (`rsa`, `sha2`, `aes`).
+- Add the egui PIN dialog and the paired-clients list with unpair. This replaces Sunshine's web UI.
+- Done when Moonlight shows the PIN prompt and the first steps succeed. Test against the XboxOG client code or a real client.
+
+### Phase 3: the single TLS surface
+- Isolate TLS in one file, `moonlight/tls.rs`, using `tokio-rustls` with a custom `ClientCertVerifier` that accepts any self-signed cert but still verifies handshake signatures. After the handshake, check the peer cert's fingerprint against the paired store and reject unknown clients.
+- Serve only: pairing finalization, paired `/serverinfo`, `/applist`, `/launch`, `/resume`, `/cancel`. Make `/appasset` return a small static image or 404.
+- Reuse the same request router as the plain server so handlers are written once and only the listener differs.
+- Done when Moonlight finishes pairing and shows your app list.
+
+### Phase 4: launch and RTSP
+- `/launch` parses mode, `rikey`/`rikeyid`, and audio settings. It creates the headless monitor at the requested mode via your existing `hypr.rs` and starts capture. Persist a portal restore token, or capture the output directly, so there is no popup per launch.
+- RTSP (TCP 48010) is a plain-socket text protocol: OPTIONS, DESCRIBE, SETUP, ANNOUNCE, PLAY. Keep RTSP unencrypted.
+
+### Phase 5: video, minimum viable
+- UDP 47998 with the RTP/NV video header, whole access units, Annex-B start codes kept, SPS/PPS before each IDR.
+- Learn the client's address from its first ping packets.
+- Start with 0% FEC and H.264 only. Nanors-compatible FEC comes later.
+- Encoder: move to in-process so you can force IDR on request.
+
+### Phase 6: control and input
+- ENet control stream on 47999 (try `rusty_enet`), IDR requests, termination, then input via the RemoteDesktop portal or `uinput`.
+- This is where the advertised `appversion` matters. Newer generations encrypt the control stream with the `rikey`, so decide this early and test with a real client.
+
+### Phase 7: audio
+- Opus RTP on 48000 from a PipeWire sink. Add the small audio FEC once basic audio works.
+
+### Phase 8: hardening
+- Real FEC, optional video/audio encryption, hardware encoding and DMABUF capture, `/cancel` and disconnect cleanup, session timeouts.
+
+## Scope shortcuts that reduce risk
+- No RTSP, video or audio encryption at first (verify the client accepts this on a LAN).
+- H.264 only; no HEVC, AV1 or HDR.
+- Single client, single session.
+- No UPnP, no WAN, no web UI.
+
+## Resulting module layout (PC side)
+```
+moonlight/
+  identity.rs   certs, host id, paired store
+  http.rs       tiny HTTP/1.1 + router (plain)
+  tls.rs        rustls listener, pinning (only TLS code)
+  pairing.rs    PIN crypto flow
+  mdns.rs
+  rtsp.rs
+  video.rs      RTP packetizer (+ fec.rs later)
+  audio.rs
+  control.rs    ENet, input
+```
+The existing `capture/` modules stay, with `packetizer.rs` replaced by `video.rs`.
+
+I fetched search snippets rather than the source files themselves, so treat packet-level details as something to confirm against moonlight-common-c and your Phase 0 captures.

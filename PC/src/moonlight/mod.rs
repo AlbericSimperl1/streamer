@@ -14,6 +14,9 @@
 //!      derives the AES key from salt+PIN and continues the handshake.
 //!   5. On success the handler calls `add_paired` with the client certificate.
 
+pub mod http;
+pub mod identity;
+pub mod mdns;
 pub mod server;
 
 use serde::{Deserialize, Serialize};
