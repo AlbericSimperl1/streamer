@@ -1,87 +1,101 @@
-use crate::capture;
+use crate::display::{Display, DisplayState};
 use crate::hypr;
-use crate::moonlight::server::{HostConfig, HostServer};
-use crate::moonlight::{HostShared, HostStatus};
+use crate::ipc;
+use crate::settings::Settings;
+use crate::sunshine::{self, ServiceState, SunshineInfo};
 use crate::types::{LogEntry, LogLevel, MonitorConfig, MonitorJson};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, SystemTime};
 
-use std::collections::VecDeque;
+type RefreshResult = (Result<Vec<MonitorJson>, String>, SunshineInfo);
 
 pub struct App {
+    /// Editable copy of the virtual monitor config (applied with "update").
     pub config: MonitorConfig,
+    pub display: Display,
+    /// Last snapshot of the shared display state.
+    pub view: DisplayState,
+    seen_generation: u64,
     pub monitors: Vec<MonitorJson>,
-    pub monitor_exists: bool,
     pub log_entries: Vec<LogEntry>,
     pub auto_refresh: bool,
     pub last_refresh: Option<SystemTime>,
 
-    /// In-flight background `hyprctl monitors` query (never block the UI thread).
-    refresh_rx: Option<mpsc::Receiver<Result<Vec<MonitorJson>, String>>>,
+    /// In-flight background `hyprctl monitors` + Sunshine query (never block
+    /// the UI thread).
+    refresh_rx: Option<mpsc::Receiver<RefreshResult>>,
+    ipc_log_rx: mpsc::Receiver<String>,
+    ipc_stop: Arc<AtomicBool>,
+    /// In-flight PIN request to Sunshine's web API.
+    pin_rx: Option<mpsc::Receiver<Result<(), String>>>,
 
-    // Moonlight host
-    pub host: HostShared,
-    host_server: Option<HostServer>,
-    /// Name shown in Moonlight's host list.
-    pub host_name: String,
-    /// PIN typed into the pairing dialog.
+    pub sunshine: Option<SunshineInfo>,
     pub pin_input: String,
+    pub pin_client_name: String,
+    pub sunshine_password: String,
+    pub settings: Settings,
 
-    // Capture session. Started by the /launch handler once the protocol
-    // server exists; the GUI no longer starts it by hand.
-    pub capture: Option<capture::CaptureSession>,
-    pub capture_output_path: String,
-    pub stop_result_rx: Option<mpsc::Receiver<capture::CaptureStatus>>,
-
-    pub signal_flag: Option<Arc<AtomicBool>>,
     shutdown_done: bool,
-
-    pub fps_history: VecDeque<f32>,
-    pub current_fps: f32,
-    pub stream_start_time: Option<SystemTime>,
-    last_frame_count: u64,
-    last_fps_calc_time: Option<SystemTime>,
 }
 
 impl App {
-    pub fn with_signal_flag(flag: Arc<AtomicBool>) -> Self {
-        Self::with_signal_flag_opt(Some(flag))
-    }
+    pub fn new() -> Self {
+        let settings = Settings::load();
+        let display = Display::new(
+            settings.monitor.clone(),
+            settings.main_monitor.clone(),
+            settings.follow_client,
+        );
+        let view = display.snapshot();
 
-    pub(crate) fn with_signal_flag_opt(signal_flag: Option<Arc<AtomicBool>>) -> Self {
-        let mut fps_history = VecDeque::with_capacity(60);
-        for _ in 0..60 {
-            fps_history.push_back(0.0);
-        }
+        let (ipc_tx, ipc_log_rx) = mpsc::channel();
+        let ipc_stop = Arc::new(AtomicBool::new(false));
+        let ipc_result = ipc::serve(display.clone(), ipc_tx, ipc_stop.clone());
 
         let mut app = Self {
-            config: MonitorConfig::default(),
+            config: view.config.clone(),
+            seen_generation: view.generation,
+            display,
+            view,
             monitors: Vec::new(),
-            monitor_exists: false,
             log_entries: Vec::new(),
             auto_refresh: true,
             last_refresh: None,
             refresh_rx: None,
-            host: HostShared::new(),
-            host_server: None,
-            host_name: default_hostname(),
+            ipc_log_rx,
+            ipc_stop,
+            pin_rx: None,
+            sunshine: None,
             pin_input: String::new(),
-            capture: None,
-            capture_output_path: default_capture_path(),
-            stop_result_rx: None,
-            signal_flag,
+            pin_client_name: String::new(),
+            sunshine_password: settings.sunshine_password.clone().unwrap_or_default(),
+            settings,
             shutdown_done: false,
-            fps_history,
-            current_fps: 0.0,
-            stream_start_time: None,
-            last_frame_count: 0,
-            last_fps_calc_time: None,
         };
-        app.log(
-            "Hyprland Virtual Display controller started.",
-            LogLevel::Info,
-        );
+        app.log("Hyprland virtual display started.", LogLevel::Info);
+        match (&app.view.main, &app.view.main_error) {
+            (Some(m), _) => app.log(
+                format!(
+                    "Main display {}: {}×{} @ {:.2} Hz, scale {}",
+                    m.name, m.width, m.height, m.refresh, m.scale
+                ),
+                LogLevel::Info,
+            ),
+            (None, Some(e)) => app.log(
+                format!(
+                    "✗ Could not read the main display ({e}); explicit fallback {}×{}@{} in use.",
+                    crate::types::FALLBACK_MODE.0,
+                    crate::types::FALLBACK_MODE.1,
+                    crate::types::FALLBACK_MODE.2
+                ),
+                LogLevel::Error,
+            ),
+            _ => {}
+        }
+        if let Err(e) = ipc_result {
+            app.log(format!("Hotkey socket unavailable: {e}"), LogLevel::Warning);
+        }
         app.refresh();
         app
     }
@@ -91,9 +105,15 @@ impl App {
     }
 
     pub fn log(&mut self, msg: impl Into<String>, level: LogLevel) {
+        let message = msg.into();
+        match level {
+            LogLevel::Error => log::error!("{message}"),
+            LogLevel::Warning => log::warn!("{message}"),
+            _ => log::info!("{message}"),
+        }
         self.log_entries.push(LogEntry {
             time: Self::timestamp(),
-            message: msg.into(),
+            message,
             level,
         });
         if self.log_entries.len() > 200 {
@@ -101,18 +121,29 @@ impl App {
         }
     }
 
-    /// Starts a non-blocking monitor refresh. The result is applied in
+    pub fn monitor_exists(&self) -> bool {
+        self.view.exists
+    }
+
+    fn save_settings(&mut self) {
+        self.settings.monitor = Some(self.display.config());
+        self.settings.follow_client = self.view.follow_client;
+        self.settings.main_monitor = self.view.preferred_main.clone();
+        self.settings.save();
+    }
+
+    /// Starts a non-blocking refresh. The result is applied in
     /// `poll_refresh()` (called from `tick()`).
     pub fn refresh(&mut self) {
         if self.refresh_rx.is_some() {
-            return; // already in flight
+            return;
         }
         let (tx, rx) = mpsc::channel();
         self.refresh_rx = Some(rx);
         let spawned = std::thread::Builder::new()
-            .name("hyprpad-refresh".into())
+            .name("hyprstream-refresh".into())
             .spawn(move || {
-                let _ = tx.send(hypr::get_monitors());
+                let _ = tx.send((hypr::get_monitors(), sunshine::query()));
             });
         if spawned.is_err() {
             self.refresh_rx = None;
@@ -123,28 +154,72 @@ impl App {
         let Some(rx) = &self.refresh_rx else {
             return;
         };
-        match rx.try_recv() {
-            Ok(Ok(monitors)) => {
-                self.refresh_rx = None;
-                self.monitor_exists = monitors.iter().any(|m| m.name == self.config.name);
-                self.monitors = monitors;
-                self.last_refresh = Some(SystemTime::now());
-            }
-            Ok(Err(e)) => {
-                self.refresh_rx = None;
-                self.last_refresh = Some(SystemTime::now());
-                self.log(format!("Failed to get monitors: {e}"), LogLevel::Error);
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
+        let (monitors, info) = match rx.try_recv() {
+            Ok(r) => r,
+            Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.refresh_rx = None;
                 self.last_refresh = Some(SystemTime::now());
+                return;
             }
+        };
+        self.refresh_rx = None;
+        self.last_refresh = Some(SystemTime::now());
+
+        if let Some(old) = &self.sunshine {
+            if old.state != info.state {
+                let level = match info.state {
+                    ServiceState::Failed => LogLevel::Error,
+                    ServiceState::Active => LogLevel::Success,
+                    _ => LogLevel::Info,
+                };
+                self.log(format!("Sunshine {}", info.state.label()), level);
+            }
+        }
+        self.sunshine = Some(info);
+
+        match monitors {
+            Ok(monitors) => {
+                let old_main = self.view.main.clone();
+                self.display.update_from_monitors(&monitors);
+                self.monitors = monitors;
+                self.sync_view();
+                if self.view.main != old_main {
+                    if let Some(m) = &self.view.main {
+                        let msg = format!(
+                            "Main display now {}: {}×{} @ {:.2} Hz at {}×{}",
+                            m.name, m.width, m.height, m.refresh, m.x, m.y
+                        );
+                        self.log(msg, LogLevel::Info);
+                    }
+                }
+            }
+            Err(e) => {
+                self.display.set_main_error(e.clone());
+                self.sync_view();
+                self.log(format!("Failed to read monitors: {e}"), LogLevel::Error);
+            }
+        }
+    }
+
+    /// Pulls the shared display state; adopts its config when something
+    /// other than the GUI changed it (session start, hotkey toggle).
+    fn sync_view(&mut self) {
+        self.view = self.display.snapshot();
+        if self.view.generation != self.seen_generation {
+            self.seen_generation = self.view.generation;
+            self.config = self.view.config.clone();
+            self.save_settings();
         }
     }
 
     pub fn tick(&mut self) {
         self.poll_refresh();
+        self.poll_pin();
+        while let Ok(msg) = self.ipc_log_rx.try_recv() {
+            self.log(msg, LogLevel::Info);
+        }
+        self.sync_view();
 
         if self.auto_refresh && self.refresh_rx.is_none() {
             let due = self.last_refresh.map_or(true, |l| {
@@ -154,221 +229,204 @@ impl App {
                 self.refresh();
             }
         }
-
-        let now = SystemTime::now();
-        let (current_frames, is_capturing) = match self.capture.as_ref().map(|c| c.status()) {
-            Some(capture::CaptureStatus::Capturing { frames, .. }) => (frames, true),
-            _ => (0, false),
-        };
-
-        if !is_capturing {
-            self.stream_start_time = None;
-            self.current_fps = 0.0;
-        } else if self.stream_start_time.is_none() {
-            self.stream_start_time = Some(now);
-            self.last_frame_count = current_frames;
-            self.last_fps_calc_time = Some(now);
-        }
-
-        let calc_due = self.last_fps_calc_time.map_or(true, |t| {
-            t.elapsed().unwrap_or_default() >= Duration::from_millis(500)
-        });
-
-        if calc_due {
-            if is_capturing {
-                if let Some(last_time) = self.last_fps_calc_time {
-                    let elapsed_secs = last_time.elapsed().unwrap_or_default().as_secs_f32();
-                    if elapsed_secs > 0.0 {
-                        let delta_frames =
-                            current_frames.saturating_sub(self.last_frame_count) as f32;
-                        let raw_fps = delta_frames / elapsed_secs;
-                        // Smooth transition
-                        self.current_fps = self.current_fps * 0.4 + raw_fps * 0.6;
-                    }
-                }
-                self.last_frame_count = current_frames;
-                self.last_fps_calc_time = Some(now);
-            } else {
-                self.current_fps = 0.0;
-            }
-
-            self.fps_history.pop_front();
-            self.fps_history.push_back(self.current_fps);
-
-            while self.fps_history.len() > 20 {
-                self.fps_history.pop_front();
-            }
-        }
     }
 
-    pub fn should_quit(&self) -> bool {
-        self.signal_flag
-            .as_ref()
-            .map_or(false, |f| f.load(Ordering::SeqCst))
-    }
-
-    pub fn is_capturing(&self) -> bool {
-        self.capture.as_ref().map_or(false, |c| c.is_running())
-    }
-
-    pub fn is_stopping(&self) -> bool {
-        self.stop_result_rx.is_some()
-    }
-
-    pub fn host_running(&self) -> bool {
-        self.host_server.is_some()
-    }
+    // virtual monitor
 
     pub fn apply_config(&mut self) {
-        if !self.monitor_exists {
-            if let Err(e) = hypr::create_headless_output(&self.config.name) {
-                eprintln!("Fout bij aanmaken headless monitor: {e}");
-                return;
+        self.display.set_config(self.config.clone());
+        match self.display.apply() {
+            Ok(c) => {
+                self.log(
+                    format!("✓ Monitor '{}' {}×{}@{} at {}×{}", c.name, c.width, c.height, c.fps, c.x, c.y),
+                    LogLevel::Success,
+                );
             }
-            self.monitor_exists = true;
+            Err(e) => self.log(format!("✗ Failed to apply monitor: {e}"), LogLevel::Error),
         }
-
-        if let Err(e) = hypr::apply_monitor_keyword(&self.config) {
-            eprintln!("Fout bij updaten monitor configuratie: {e}");
+        self.sync_view();
+        self.save_settings();
+        if self.settings.sync_output_name {
+            self.sync_output_name();
         }
-
         self.refresh();
     }
 
     pub fn do_remove(&mut self) {
         let name = self.config.name.clone();
+        match self.display.remove() {
+            Ok(()) => self.log(format!("✓ Monitor '{name}' removed."), LogLevel::Success),
+            Err(e) => self.log(format!("✗ Failed to remove: {e}"), LogLevel::Error),
+        }
+        self.sync_view();
+        self.refresh();
+    }
 
-        self.log(
-            format!("▶ Removing virtual monitor '{name}'..."),
-            LogLevel::Info,
-        );
-        self.log(format!("  $ hyprctl output remove {name}"), LogLevel::Info);
-
-        match hypr::remove_monitor(&name) {
-            Ok(out) => {
+    /// `A×B ⇄ B×A`.
+    pub fn do_toggle_orientation(&mut self) {
+        // Apply pending GUI edits first so the toggle acts on what is shown.
+        self.display.set_config(self.config.clone());
+        match self.display.toggle_orientation() {
+            Ok(c) => {
+                let live = if self.view.exists { "" } else { " (applies on create)" };
                 self.log(
-                    format!("✓ Monitor '{name}' removed. {}", out.trim()),
+                    format!("⇄ {}×{} ({}){live}", c.width, c.height, c.orientation().label()),
                     LogLevel::Success,
                 );
-                self.refresh();
+                self.config = c;
             }
-            Err(e) => {
-                self.log(format!("✗ Failed to remove: {e}"), LogLevel::Error);
-            }
+            Err(e) => self.log(format!("✗ Toggle failed: {e}"), LogLevel::Error),
+        }
+        self.sync_view();
+        self.save_settings();
+        self.refresh();
+    }
+
+    /// Resets the editable config to the main display's mode, left of it.
+    pub fn reset_to_main(&mut self) {
+        if let Some(m) = &self.view.main {
+            let name = self.config.name.clone();
+            self.config = MonitorConfig::for_main(m);
+            self.config.name = name;
         }
     }
 
-    // Moonlight host
+    pub fn set_follow_client(&mut self, on: bool) {
+        self.display.set_follow_client(on);
+        self.sync_view();
+        self.save_settings();
+    }
 
-    pub fn do_start_host(&mut self) {
-        if self.host_server.is_some() {
-            self.log("Host already running.", LogLevel::Warning);
-            return;
-        }
-        let cfg = HostConfig {
-            hostname: self.host_name.trim().to_string(),
-            ..Default::default()
+    pub fn set_main_monitor(&mut self, name: Option<String>) {
+        self.display.set_preferred_main(name);
+        self.save_settings();
+        self.refresh();
+    }
+
+    // Sunshine
+
+    pub fn sunshine_state(&self) -> ServiceState {
+        self.sunshine
+            .as_ref()
+            .map(|s| s.state.clone())
+            .unwrap_or(ServiceState::Unknown("…".into()))
+    }
+
+    pub fn do_sunshine(&mut self, action: &str) {
+        let result = match action {
+            "start" => sunshine::start(),
+            "stop" => sunshine::stop(),
+            _ => sunshine::restart(),
         };
-        self.log(
-            format!("▶ Starting Moonlight host '{}'...", cfg.hostname),
-            LogLevel::Info,
-        );
-        match HostServer::start(self.host.clone(), cfg) {
-            Ok(server) => {
-                self.host_server = Some(server);
-                self.log(
-                    "✓ Host started. Add this PC in Moonlight and pair.",
-                    LogLevel::Success,
-                );
-            }
-            Err(e) => self.log(format!("✗ Failed to start host: {e}"), LogLevel::Error),
+        match result {
+            Ok(()) => self.log(format!("Sunshine {action} requested."), LogLevel::Info),
+            Err(e) => self.log(format!("✗ Sunshine {action}: {e}"), LogLevel::Error),
+        }
+        self.refresh();
+    }
+
+    pub fn open_web_ui(&mut self) {
+        if let Err(e) = sunshine::open_web_ui() {
+            self.log(format!("✗ {e}"), LogLevel::Error);
         }
     }
 
-    pub fn do_stop_host(&mut self) {
-        if self.is_capturing() {
-            self.do_stop_capture();
-        }
-        if let Some(mut server) = self.host_server.take() {
-            server.stop();
-            self.log("Host stopped.", LogLevel::Info);
-        }
-        self.pin_input.clear();
-    }
-
-    pub fn do_submit_pin(&mut self) {
-        let pin = self.pin_input.clone();
-        let name = self
-            .host
-            .pending_pairing()
-            .map(|(n, _)| n)
-            .unwrap_or_default();
-        if self.host.submit_pin(&pin) {
-            self.log(format!("Pairing PIN sent for '{name}'."), LogLevel::Info);
-        } else {
-            self.log(
-                "Invalid PIN or no pairing request pending.",
-                LogLevel::Warning,
-            );
-        }
-        self.pin_input.clear();
-    }
-
-    pub fn do_reject_pairing(&mut self) {
-        self.host.reject_pairing();
-        self.pin_input.clear();
-        self.log("Pairing request rejected.", LogLevel::Warning);
-    }
-
-    pub fn do_unpair(&mut self, unique_id: &str, name: &str) {
-        self.host.unpair(unique_id);
-        self.log(format!("Unpaired '{name}'."), LogLevel::Info);
-    }
-
-    pub fn do_stop_capture(&mut self) {
-        if let Some(mut session) = self.capture.take() {
-            self.log("▶ Stopping capture...", LogLevel::Info);
-
-            let (tx, rx) = mpsc::channel();
-            self.stop_result_rx = Some(rx);
-
-            std::thread::spawn(move || {
-                session.stop();
-                let final_status = session.status();
-                let _ = tx.send(final_status);
-            });
-        }
-    }
-
-    pub fn poll_stop_result(&mut self) {
-        let rx = match &self.stop_result_rx {
-            Some(rx) => rx,
-            None => return,
-        };
-        match rx.try_recv() {
-            Ok(status) => {
-                self.stop_result_rx = None;
-                match status {
-                    capture::CaptureStatus::Finished { path, frames } => {
-                        self.log(
-                            format!("✓ Capture ended ({frames} frames)"),
-                            LogLevel::Success,
-                        );
-                    }
-                    capture::CaptureStatus::Error(e) => {
-                        self.log(format!("✗ Capture error: {e}"), LogLevel::Error);
-                    }
-                    _ => {
-                        self.log("Capture stopped.", LogLevel::Info);
-                    }
+    /// Points Sunshine's `output_name` at the virtual monitor. Sunshine reads
+    /// it only at startup, so a running Sunshine is restarted.
+    pub fn sync_output_name(&mut self) {
+        let name = self.config.name.trim().to_string();
+        match sunshine::set_output_name(&name) {
+            Ok(false) => {}
+            Ok(true) => {
+                self.log(format!("✓ Sunshine output_name = {name}"), LogLevel::Success);
+                if self.sunshine_state() == ServiceState::Active {
+                    self.log("Restarting Sunshine to pick up the new output.", LogLevel::Info);
+                    self.do_sunshine("restart");
                 }
             }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.stop_result_rx = None;
-                self.log("✗ Capture stop thread ended unexpectedly.", LogLevel::Error);
-            }
+            Err(e) => self.log(format!("✗ Cannot update sunshine.conf: {e}"), LogLevel::Error),
         }
+        self.refresh();
+    }
+
+    pub fn set_sync_output_name(&mut self, on: bool) {
+        self.settings.sync_output_name = on;
+        self.save_settings();
+        if on {
+            self.sync_output_name();
+        }
+    }
+
+    pub fn set_prep_cmd(&mut self, install: bool) {
+        match sunshine::set_prep_cmd(install) {
+            Ok(()) => {
+                let what = if install { "installed in" } else { "removed from" };
+                self.log(
+                    format!("✓ Client-resolution prep-cmd {what} Sunshine's Desktop app."),
+                    LogLevel::Success,
+                );
+                if self.sunshine_state() == ServiceState::Active {
+                    self.do_sunshine("restart");
+                }
+            }
+            Err(e) => self.log(format!("✗ apps.json: {e}"), LogLevel::Error),
+        }
+        self.refresh();
+    }
+
+    pub fn pin_pending(&self) -> bool {
+        self.pin_rx.is_some()
+    }
+
+    pub fn do_send_pin(&mut self) {
+        if self.pin_rx.is_some() {
+            return;
+        }
+        let pin = self.pin_input.clone();
+        let name = match self.pin_client_name.trim() {
+            "" => "moonlight".to_string(),
+            n => n.to_string(),
+        };
+        let user = self.settings.sunshine_user.clone();
+        let password = self.sunshine_password.clone();
+        let (tx, rx) = mpsc::channel();
+        self.pin_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(sunshine::send_pin(&pin, &name, &user, &password));
+        });
+    }
+
+    fn poll_pin(&mut self) {
+        let Some(rx) = &self.pin_rx else {
+            return;
+        };
+        let result = match rx.try_recv() {
+            Ok(r) => r,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err("PIN request thread ended".into()),
+        };
+        self.pin_rx = None;
+        match result {
+            Ok(()) => {
+                self.log("✓ Paired with Moonlight.", LogLevel::Success);
+                self.pin_input.clear();
+                self.pin_client_name.clear();
+            }
+            Err(e) => self.log(format!("✗ Pairing: {e}"), LogLevel::Error),
+        }
+    }
+
+    pub fn set_remember_password(&mut self, on: bool) {
+        self.settings.sunshine_password = on.then(|| self.sunshine_password.clone());
+        self.save_settings();
+    }
+
+    /// Persists the login fields (password only when "remember" is on).
+    pub fn credentials_changed(&mut self) {
+        if self.settings.sunshine_password.is_some() {
+            self.settings.sunshine_password = Some(self.sunshine_password.clone());
+        }
+        self.save_settings();
     }
 
     pub fn shutdown(&mut self) {
@@ -376,22 +434,13 @@ impl App {
             return;
         }
         self.shutdown_done = true;
-
-        if let Some(mut server) = self.host_server.take() {
-            server.stop();
-        }
-        if let Some(mut session) = self.capture.take() {
-            session.stop();
-            println!("✓ Capture sessie gestopt bij afsluiten.");
-        }
-        if let Some(rx) = self.stop_result_rx.take() {
-            let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
-        }
-        if self.monitor_exists {
-            let name = self.config.name.clone();
-            match hypr::remove_monitor(&name) {
-                Ok(_) => println!("✓ Monitor succesvol opgeruimd."),
-                Err(e) => eprintln!("✗ Fout bij opruimen monitor bij afsluiten: {e}"),
+        self.ipc_stop.store(true, Ordering::SeqCst);
+        self.save_settings();
+        let d = self.display.snapshot();
+        if d.exists && d.owned {
+            match self.display.remove() {
+                Ok(()) => log::info!("virtual monitor removed"),
+                Err(e) => log::error!("removing virtual monitor on exit: {e}"),
             }
         }
     }
@@ -399,42 +448,6 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.host_server.take();
-        if self.capture.is_some() {
-            self.capture.take();
-        }
-        if self.monitor_exists {
-            let name = self.config.name.clone();
-            let _ = hypr::remove_monitor(&name);
-        }
+        self.shutdown();
     }
-}
-
-fn default_hostname() -> String {
-    std::fs::read_to_string("/etc/hostname")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| std::env::var("HOSTNAME").ok())
-        .unwrap_or_else(|| "hyprstream".into())
-}
-
-fn default_capture_path() -> String {
-    let mut p = dirs_or_tmp();
-    p.push("hyprpad_capture.mp4");
-    p.to_string_lossy().into_owned()
-}
-
-fn dirs_or_tmp() -> std::path::PathBuf {
-    if let Some(d) = std::env::var_os("XDG_VIDEOS_DIR") {
-        return std::path::PathBuf::from(d);
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let mut p = std::path::PathBuf::from(home);
-        p.push("Videos");
-        if p.exists() {
-            return p;
-        }
-    }
-    std::path::PathBuf::from("/tmp")
 }

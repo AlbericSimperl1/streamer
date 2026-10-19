@@ -1,11 +1,11 @@
 use crate::app::App;
-use crate::moonlight::{HostStatus, DEFAULT_HTTP_PORT};
+use crate::sunshine::ServiceState;
+use crate::types::LogLevel;
 use eframe::egui;
 use std::time::Duration;
 
 // palette
 // layered darks
-const BG: egui::Color32 = egui::Color32::from_rgb(19, 25, 26);
 const BG0: egui::Color32 = egui::Color32::from_rgb(24, 32, 34);
 const BG1: egui::Color32 = egui::Color32::from_rgb(26, 34, 36);
 const BG2: egui::Color32 = egui::Color32::from_rgb(30, 39, 41);
@@ -28,17 +28,12 @@ const ACC_D: egui::Color32 = egui::Color32::from_rgb(28, 55, 75);
 const GRN: egui::Color32 = egui::Color32::from_rgb(70, 190, 100);
 const YEL: egui::Color32 = egui::Color32::from_rgb(220, 180, 80);
 const RED: egui::Color32 = egui::Color32::from_rgb(220, 90, 90);
-const RED_D: egui::Color32 = egui::Color32::from_rgb(65, 28, 28);
 
-/// Height of the "moonlight" strip under the position canvas.
-const CLIENTS_H: f32 = 118.0;
+/// Width of the config/controls column.
+const LEFT_W: f32 = 300.0;
 
 // app
 impl App {
-    pub fn new() -> Self {
-        Self::with_signal_flag_opt(None)
-    }
-
     pub fn new_scaled(cc: &eframe::CreationContext, scale: f32) -> Self {
         configure_style(&cc.egui_ctx, scale);
         Self::new()
@@ -51,56 +46,42 @@ impl eframe::App for App {
         if self.auto_refresh {
             ctx.request_repaint_after(Duration::from_secs(1));
         }
-        if self.should_quit() {
-            self.shutdown();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            return;
-        }
-        let capturing = self.is_capturing();
-        let stopping = self.is_stopping();
-        if capturing || stopping {
+        if self.pin_pending() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        // The protocol server raises pairing requests from another thread;
-        // poll often enough that the PIN dialog appears promptly.
-        if self.host_running() {
-            ctx.request_repaint_after(Duration::from_millis(250));
-        }
-        self.poll_stop_result();
 
-        egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(BG0))
+        // Real panels instead of nested horizontal/vertical layouts, so every
+        // section always gets its full share of the window.
+        let gap = egui::Frame::none().fill(BG0).inner_margin(egui::Margin::same(4.0));
+
+        egui::TopBottomPanel::top("top_bar")
+            .frame(egui::Frame::none().fill(BG1))
+            .show_separator_line(false)
+            .show(ctx, |ui| self.render_top_bar(ui));
+
+        egui::SidePanel::left("left")
+            .frame(gap)
+            .resizable(false)
+            .exact_width(LEFT_W)
+            .show_separator_line(false)
             .show(ctx, |ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 4.0;
-
-                    self.render_top_bar(ui);
-
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        ui.add_space(4.0);
-
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 4.0;
-                            self.render_config_panel(ui);
-                            self.render_controls_panel(ui, stopping);
-                        });
-
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 4.0;
-                            let canvas_h = (ui.available_height() - CLIENTS_H - 4.0).max(120.0);
-                            self.render_canvas_panel(ui, canvas_h);
-                            self.render_clients_panel(ui, CLIENTS_H);
-                        });
-
-                        ui.add_space(4.0);
-                    });
-
-                    ui.add_space(4.0);
-                });
+                ui.spacing_mut().item_spacing.y = 4.0;
+                let controls_h = 150.0;
+                let config_h = (ui.available_height() - controls_h - 4.0).max(120.0);
+                self.render_config_panel(ui, config_h);
+                self.render_controls_panel(ui);
             });
 
-        self.render_pairing_dialog(ctx);
+        egui::TopBottomPanel::bottom("sunshine")
+            .frame(gap)
+            .resizable(false)
+            .show_separator_line(false)
+            .show(ctx, |ui| self.render_sunshine_panel(ui));
+
+        egui::CentralPanel::default().frame(gap).show(ctx, |ui| {
+            let h = ui.available_height();
+            self.render_canvas_panel(ui, h);
+        });
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -108,12 +89,12 @@ impl eframe::App for App {
     }
 }
 
-fn host_status_label(status: &HostStatus) -> (&'static str, egui::Color32) {
-    match status {
-        HostStatus::Stopped => ("stopped", T3),
-        HostStatus::Starting => ("starting", YEL),
-        HostStatus::Listening => ("listening", GRN),
-        HostStatus::Error(_) => ("error", RED),
+fn sunshine_color(state: &ServiceState) -> egui::Color32 {
+    match state {
+        ServiceState::Active => GRN,
+        ServiceState::Activating => YEL,
+        ServiceState::Failed => RED,
+        ServiceState::Inactive | ServiceState::Unknown(_) => T3,
     }
 }
 
@@ -135,16 +116,13 @@ impl App {
             egui::pos2(rect.max.x - 8.0, rect.max.y),
         );
 
-        let session = self.host.session();
-        let host_status = self.host.status();
+        let sunshine = self.sunshine_state();
 
         ui.allocate_ui_at_rect(inner, |ui| {
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
 
-                let (dot, dot_col) = if self.is_capturing() || session.is_some() {
-                    ("●", ACC)
-                } else if self.monitor_exists {
+                let (dot, dot_col) = if self.monitor_exists() {
                     ("●", GRN)
                 } else {
                     ("○", T3)
@@ -164,7 +142,7 @@ impl App {
 
                 ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
 
-                if self.monitor_exists {
+                if self.monitor_exists() {
                     ui.label(
                         egui::RichText::new(format!("● {}", self.config.name))
                             .color(GRN)
@@ -193,35 +171,33 @@ impl App {
                 );
 
                 ui.add_space(8.0);
-                if custom_icon_button(ui, "↺", ACC)
-                    .on_hover_text("Reset to 1440x1080 @ 60 Hz")
+                if custom_icon_button(ui, "⇄", ACC)
+                    .on_hover_text("Swap orientation (A×B ⇄ B×A)")
                     .clicked()
                 {
-                    self.config.width = 1440;
-                    self.config.height = 1080;
-                    self.config.fps = 60;
-                    self.config.scale = 1.0;
+                    self.do_toggle_orientation();
+                }
+                if custom_icon_button(ui, "↺", ACC)
+                    .on_hover_text("Reset to the main display's mode")
+                    .clicked()
+                {
+                    self.reset_to_main();
                 }
 
+                ui.label(egui::RichText::new("│").color(BRD).monospace().size(11.0));
+                let main_text = match (&self.view.main, &self.view.main_error) {
+                    (Some(m), _) => (
+                        format!("main {} {}×{}@{:.0}", m.name, m.width, m.height, m.refresh),
+                        T3,
+                    ),
+                    (None, Some(_)) => ("main display unreadable".to_string(), RED),
+                    _ => (String::new(), T3),
+                };
+                ui.label(egui::RichText::new(main_text.0).color(main_text.1).monospace().size(11.0));
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (cap_text, cap_col): (String, egui::Color32) = if let Some(s) = &session {
-                        (format!("● streaming → {}", s.client_name), ACC)
-                    } else if self.is_stopping() {
-                        ("● stopping".into(), YEL)
-                    } else {
-                        match &host_status {
-                            HostStatus::Listening => ("● listening".into(), GRN),
-                            HostStatus::Starting => ("● starting".into(), YEL),
-                            HostStatus::Error(_) => ("● error".into(), RED),
-                            HostStatus::Stopped => {
-                                if self.monitor_exists {
-                                    ("● ready".into(), GRN)
-                                } else {
-                                    ("idle".into(), T3)
-                                }
-                            }
-                        }
-                    };
+                    let (cap_text, cap_col) =
+                        (format!("● sunshine {}", sunshine.label()), sunshine_color(&sunshine));
                     ui.label(
                         egui::RichText::new(cap_text)
                             .color(cap_col)
@@ -233,22 +209,25 @@ impl App {
         });
     }
 
-    fn render_config_panel(&mut self, ui: &mut egui::Ui) {
+    fn render_config_panel(&mut self, ui: &mut egui::Ui, panel_h: f32) {
         panel_frame().show(ui, |ui| {
-            ui.set_width(280.0);
+            ui.set_width(ui.available_width());
+            ui.set_height(panel_h - 16.0);
             ui.vertical(|ui| {
                 section_header(ui, "config");
-                self.render_config(ui);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.render_config(ui));
             });
         });
     }
 
-    fn render_controls_panel(&mut self, ui: &mut egui::Ui, stopping: bool) {
+    fn render_controls_panel(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
-            ui.set_width(280.0);
+            ui.set_width(ui.available_width());
             ui.vertical(|ui| {
                 section_header(ui, "controls");
-                self.render_controls(ui, stopping);
+                self.render_controls(ui);
             });
         });
     }
@@ -257,7 +236,7 @@ impl App {
         config_label(ui, "identifier");
         ui.horizontal(|ui| {
             tree_indent(ui);
-            ui.add_enabled_ui(!self.monitor_exists, |ui| {
+            ui.add_enabled_ui(!self.monitor_exists(), |ui| {
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.config.name)
                         .desired_width(130.0)
@@ -276,53 +255,10 @@ impl App {
                         egui::pos2(response.rect.min.x, line_y),
                         egui::pos2(response.rect.max.x, line_y),
                     ],
-                    egui::Stroke::new(0.5_f32, if self.monitor_exists { GRN } else { BRD }),
+                    egui::Stroke::new(0.5_f32, if self.monitor_exists() { GRN } else { BRD }),
                 );
             });
-            if self.monitor_exists {
-                ui.label(egui::RichText::new("✓").color(GRN).monospace().size(11.0));
-            }
-        });
-        ui.add_space(6.0);
-
-        // Replaces the old "target ip" row: this is the name Moonlight shows
-        // in its host list. Locked while the host is running.
-        config_label(ui, "host name");
-        ui.horizontal(|ui| {
-            tree_indent(ui);
-            let running = self.host_running();
-            ui.add_enabled_ui(!running, |ui| {
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut self.host_name)
-                        .desired_width(130.0)
-                        .frame(false)
-                        .text_color(T1)
-                        .hint_text(
-                            egui::RichText::new("shown in moonlight")
-                                .color(T3)
-                                .monospace()
-                                .size(11.0),
-                        ),
-                );
-                let line_y = response.rect.bottom();
-                ui.painter().line_segment(
-                    [
-                        egui::pos2(response.rect.min.x, line_y),
-                        egui::pos2(response.rect.max.x, line_y),
-                    ],
-                    egui::Stroke::new(
-                        0.5_f32,
-                        if running {
-                            GRN
-                        } else if !self.host_name.is_empty() {
-                            ACC
-                        } else {
-                            BRD
-                        },
-                    ),
-                );
-            });
-            if self.host_running() {
+            if self.monitor_exists() {
                 ui.label(egui::RichText::new("✓").color(GRN).monospace().size(11.0));
             }
         });
@@ -384,23 +320,86 @@ impl App {
                     .size(11.0),
             );
         });
+        ui.add_space(6.0);
+
+        config_label(ui, "orientation");
+        ui.horizontal(|ui| {
+            tree_indent(ui);
+            let o = self.config.orientation();
+            ui.label(
+                egui::RichText::new(format!("{} {}×{}", o.label(), self.config.width, self.config.height))
+                    .color(T1)
+                    .monospace()
+                    .size(11.0),
+            );
+            if custom_icon_button(ui, "⇄", ACC)
+                .on_hover_text("Swap A×B ⇄ B×A (also: streamer --toggle)")
+                .clicked()
+            {
+                self.do_toggle_orientation();
+            }
+        });
+        ui.add_space(6.0);
+
+        config_label(ui, "main display");
+        ui.horizontal(|ui| {
+            tree_indent(ui);
+            let current = self.view.preferred_main.clone();
+            let shown = current
+                .clone()
+                .unwrap_or_else(|| format!("auto ({})", self.view.main.as_ref().map(|m| m.name.as_str()).unwrap_or("?")));
+            let mut choice: Option<Option<String>> = None;
+            egui::ComboBox::from_id_source("main_display")
+                .selected_text(egui::RichText::new(shown).monospace().size(11.0))
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(current.is_none(), "auto").clicked() {
+                        choice = Some(None);
+                    }
+                    for name in self.view.physical.clone() {
+                        if ui.selectable_label(current.as_deref() == Some(&name), &name).clicked() {
+                            choice = Some(Some(name));
+                        }
+                    }
+                });
+            if let Some(c) = choice {
+                self.set_main_monitor(c);
+            }
+        });
+        if let Some(e) = &self.view.main_error {
+            ui.label(egui::RichText::new(format!("   {e}")).color(RED).monospace().size(10.0));
+        }
+        ui.add_space(6.0);
+
+        config_label(ui, "moonlight");
+        ui.horizontal(|ui| {
+            tree_indent(ui);
+            let mut follow = self.view.follow_client;
+            if ui
+                .checkbox(&mut follow, egui::RichText::new("follow client resolution").monospace().size(11.0))
+                .on_hover_text(
+                    "At session start (Sunshine prep-cmd) resize the virtual monitor to the resolution \
+                     Moonlight requests, kept in the current orientation",
+                )
+                .changed()
+            {
+                self.set_follow_client(follow);
+            }
+        });
     }
 
-    fn render_controls(&mut self, ui: &mut egui::Ui, stopping: bool) {
-        let host_on = self.host_running();
-        let can_apply = !self.config.name.is_empty() && !stopping;
-        let can_remove = self.monitor_exists && !self.is_capturing() && !stopping;
-        // Starting/stopping now controls the Moonlight host, not a capture to
-        // a fixed IP. Capture is started by Moonlight's /launch.
-        let can_start = !host_on && !stopping && !self.host_name.trim().is_empty();
-        let can_stop = host_on && !stopping;
+    fn render_controls(&mut self, ui: &mut egui::Ui) {
+        let can_apply = !self.config.name.is_empty();
+        let can_remove = self.monitor_exists();
+        let state = self.sunshine_state();
+        let running = matches!(state, ServiceState::Active | ServiceState::Activating);
 
-        let btn_width = (272.0 - 4.0) / 2.0;
+        let btn_width = (ui.available_width() - 4.0) / 2.0;
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
 
-            let button_text = if self.monitor_exists {
+            let button_text = if self.monitor_exists() {
                 "update"
             } else {
                 "create"
@@ -417,12 +416,27 @@ impl App {
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-
-            if custom_button(ui, "start host", can_start, GRN, btn_width).clicked() {
-                self.do_start_host();
+            if running {
+                if custom_button(ui, "stop sunshine", true, RED, btn_width).clicked() {
+                    self.do_sunshine("stop");
+                }
+            } else if custom_button(ui, "start sunshine", true, GRN, btn_width).clicked() {
+                self.do_sunshine("start");
             }
-            if custom_button(ui, "stop host", can_stop, RED, btn_width).clicked() {
-                self.do_stop_host();
+            if custom_button(ui, "restart sunshine", running, YEL, btn_width).clicked() {
+                self.do_sunshine("restart");
+            }
+        });
+
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            if custom_button(ui, "⇄ orientation", true, ACC, btn_width).clicked() {
+                self.do_toggle_orientation();
+            }
+            if custom_button(ui, "sunshine web ui", true, ACC, btn_width).clicked() {
+                self.open_web_ui();
             }
         });
     }
@@ -449,14 +463,24 @@ impl App {
                     ui.allocate_painter(canvas_size, egui::Sense::click_and_drag());
                 let canvas_rect = response.rect;
 
-                let scale = 0.05;
-                let main_w = 1920.0;
-                let main_h = 1080.0;
-                let main_x = 0.0;
-                let main_y = 0.0;
+                // Real main display geometry in layout coordinates (Eis 2).
+                let (main_name, main_x, main_y, main_w, main_h) = match &self.view.main {
+                    Some(m) => (
+                        m.name.clone(),
+                        m.x as f32,
+                        m.y as f32,
+                        m.logical_w as f32,
+                        m.logical_h as f32,
+                    ),
+                    None => ("main ?".to_string(), 0.0, 0.0, 1920.0, 1080.0),
+                };
 
-                let virt_w = self.config.width as f32;
-                let virt_h = self.config.height as f32;
+                let (lw, lh) = self.config.logical_size();
+                let virt_w = lw as f32;
+                let virt_h = lh as f32;
+                let scale = ((canvas_size.x / (main_w + 2.0 * virt_w.max(virt_h)))
+                    .min(canvas_size.y / (main_h + 2.0 * virt_w.max(virt_h))))
+                    * 0.95;
 
                 if response.drag_started() {
                     ui.memory_mut(|m| {
@@ -487,15 +511,15 @@ impl App {
                     let mut final_x = raw_x;
                     let mut final_y = raw_y;
                     let snap_threshold = 250.0;
-                    if (raw_x + virt_w).abs() < snap_threshold {
-                        final_x = -virt_w;
-                    } else if (raw_x - main_w).abs() < snap_threshold {
-                        final_x = main_w;
+                    if (raw_x + virt_w - main_x).abs() < snap_threshold {
+                        final_x = main_x - virt_w;
+                    } else if (raw_x - (main_x + main_w)).abs() < snap_threshold {
+                        final_x = main_x + main_w;
                     }
-                    if (raw_y + virt_h).abs() < snap_threshold {
-                        final_y = -virt_h;
-                    } else if (raw_y - main_h).abs() < snap_threshold {
-                        final_y = main_h;
+                    if (raw_y + virt_h - main_y).abs() < snap_threshold {
+                        final_y = main_y - virt_h;
+                    } else if (raw_y - (main_y + main_h)).abs() < snap_threshold {
+                        final_y = main_y + main_h;
                     }
                     self.config.x = final_x as i32;
                     self.config.y = final_y as i32;
@@ -509,18 +533,18 @@ impl App {
                     let mut snapped_x = false;
                     let mut snapped_y = false;
 
-                    if (raw_x + virt_w).abs() < snap_threshold {
-                        raw_x = -virt_w;
+                    if (raw_x + virt_w - main_x).abs() < snap_threshold {
+                        raw_x = main_x - virt_w;
                         snapped_x = true;
-                    } else if (raw_x - main_w).abs() < snap_threshold {
-                        raw_x = main_w;
+                    } else if (raw_x - (main_x + main_w)).abs() < snap_threshold {
+                        raw_x = main_x + main_w;
                         snapped_x = true;
                     }
-                    if (raw_y + virt_h).abs() < snap_threshold {
-                        raw_y = -virt_h;
+                    if (raw_y + virt_h - main_y).abs() < snap_threshold {
+                        raw_y = main_y - virt_h;
                         snapped_y = true;
-                    } else if (raw_y - main_h).abs() < snap_threshold {
-                        raw_y = main_h;
+                    } else if (raw_y - (main_y + main_h)).abs() < snap_threshold {
+                        raw_y = main_y + main_h;
                         snapped_y = true;
                     }
                     if !snapped_x {
@@ -545,8 +569,8 @@ impl App {
 
                 let center_x = canvas_rect.center().x;
                 let center_y = canvas_rect.center().y;
-                let origin_x = center_x - (main_w / 2.0) * scale;
-                let origin_y = center_y - (main_h / 2.0) * scale;
+                let origin_x = center_x - (main_x + main_w / 2.0) * scale;
+                let origin_y = center_y - (main_y + main_h / 2.0) * scale;
 
                 let to_canvas = |sx: f32, sy: f32| -> egui::Pos2 {
                     egui::pos2(origin_x + sx * scale, origin_y + sy * scale)
@@ -608,7 +632,7 @@ impl App {
                 painter.text(
                     main_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    "main (DP-1)",
+                    &main_name,
                     egui::FontId::monospace(9.0),
                     T2,
                 );
@@ -619,7 +643,7 @@ impl App {
                     egui::vec2(virt_w * scale, virt_h * scale),
                 );
 
-                let (fill_col, stroke_col, text_col) = if self.monitor_exists {
+                let (fill_col, stroke_col, text_col) = if self.monitor_exists() {
                     (ACC_D, ACC, ACC)
                 } else {
                     (BG3, T2, T2)
@@ -648,188 +672,178 @@ impl App {
         });
     }
 
-    /// Paired clients + session status. Same panel/section-header/tree style
-    /// as the rest of the UI.
-    fn render_clients_panel(&mut self, ui: &mut egui::Ui, panel_h: f32) {
-        let status = self.host.status();
-        let clients = self.host.paired_clients();
-        let session = self.host.session();
-        let mut unpair: Option<(String, String)> = None;
+    /// Sunshine service state, output selection, client-resolution hook and
+    /// PIN pairing. Same panel/section-header/tree style as the rest.
+    fn render_sunshine_panel(&mut self, ui: &mut egui::Ui) {
+        let state = self.sunshine_state();
+        let info = self.sunshine.clone();
+        let mut action: Option<Box<dyn FnOnce(&mut App)>> = None;
 
         panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_height(panel_h - 16.0);
             ui.vertical(|ui| {
-                section_header(ui, "moonlight");
+                section_header(ui, "sunshine");
 
-                let (label, col) = host_status_label(&status);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.label(egui::RichText::new("●").color(col).monospace().size(10.0));
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{label} · tcp {DEFAULT_HTTP_PORT} · {} paired",
-                            clients.len()
-                        ))
-                        .color(T2)
-                        .monospace()
-                        .size(11.0),
-                    );
+                    ui.label(egui::RichText::new("●").color(sunshine_color(&state)).monospace().size(10.0));
+                    ui.label(small(state.label(), T1));
+                    ui.label(small("│", BRD));
+
+                    let output = info.as_ref().and_then(|i| i.output_name.clone());
+                    let matches = output.as_deref() == Some(self.config.name.trim());
+                    ui.label(small(
+                        format!("output {}", output.as_deref().unwrap_or("(first monitor)")),
+                        if matches { GRN } else { YEL },
+                    ));
+                    if !matches
+                        && custom_icon_button(ui, "↻", ACC)
+                            .on_hover_text(format!("Set Sunshine output_name = {}", self.config.name.trim()))
+                            .clicked()
+                    {
+                        action = Some(Box::new(|app: &mut App| app.sync_output_name()));
+                    }
+                    let mut sync = self.settings.sync_output_name;
+                    if ui
+                        .checkbox(&mut sync, small("keep in sync", T2))
+                        .on_hover_text("Write the virtual monitor's name to sunshine.conf on create/update")
+                        .changed()
+                    {
+                        action = Some(Box::new(move |app: &mut App| app.set_sync_output_name(sync)));
+                    }
                 });
 
-                if let HostStatus::Error(e) = &status {
-                    ui.label(egui::RichText::new(e).color(RED).monospace().size(10.0));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let installed = info.as_ref().is_some_and(|i| i.prep_installed);
+                    if installed {
+                        ui.label(small("client-resolution hook installed", GRN));
+                        if custom_icon_button(ui, "×", RED)
+                            .on_hover_text("Remove the prep-cmd from Sunshine's Desktop app")
+                            .clicked()
+                        {
+                            action = Some(Box::new(|app: &mut App| app.set_prep_cmd(false)));
+                        }
+                    } else {
+                        ui.label(small("client-resolution hook not installed", T3));
+                        if custom_icon_button(ui, "+", ACC)
+                            .on_hover_text(
+                                "Add `streamer --client-mode` as prep-cmd to Sunshine's Desktop app, \
+                                 so the monitor takes the resolution Moonlight asks for",
+                            )
+                            .clicked()
+                        {
+                            action = Some(Box::new(|app: &mut App| app.set_prep_cmd(true)));
+                        }
+                    }
+                });
+
+                ui.add_space(4.0);
+
+                let mut send = false;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.label(small("pair  PIN", T2));
+                    let pin = underlined(ui, &mut self.pin_input, "0000", 40.0, false, 4);
+                    self.pin_input.retain(|c| c.is_ascii_digit());
+                    ui.label(small("device", T2));
+                    underlined(ui, &mut self.pin_client_name, "ipad", 80.0, false, 32);
+                    let ready = self.pin_input.len() == 4 && !self.pin_pending();
+                    let label = if self.pin_pending() { "…" } else { "pair" };
+                    send = small_button(ui, label, ready, GRN).clicked()
+                        || (ready && pin.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.label(small("login", T2));
+                    let user = underlined(ui, &mut self.settings.sunshine_user, "user", 80.0, false, 64);
+                    let pass = underlined(ui, &mut self.sunshine_password, "password", 80.0, true, 128);
+                    if user.lost_focus() || pass.lost_focus() {
+                        action = Some(Box::new(|app: &mut App| app.credentials_changed()));
+                    }
+                    let mut remember = self.settings.sunshine_password.is_some();
+                    if ui
+                        .checkbox(&mut remember, small("remember", T2))
+                        .on_hover_text("Store the password in ~/.config/hyprstream/settings.json (mode 600)")
+                        .changed()
+                    {
+                        action = Some(Box::new(move |app: &mut App| app.set_remember_password(remember)));
+                    }
+                });
+
+                if send {
+                    action = Some(Box::new(|app: &mut App| app.do_send_pin()));
                 }
 
-                if let Some(s) = &session {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "▶ {}  {}×{} @ {}  {:.0} Mbps  {}",
-                            s.client_name,
-                            s.width,
-                            s.height,
-                            s.fps,
-                            s.bitrate_kbps as f32 / 1000.0,
-                            s.client_addr
-                        ))
-                        .color(ACC)
-                        .monospace()
-                        .size(11.0),
-                    );
+                // Latest log line: the result of the last action.
+                if let Some(e) = self.log_entries.last() {
+                    let col = match e.level {
+                        LogLevel::Error => RED,
+                        LogLevel::Warning => YEL,
+                        LogLevel::Success => GRN,
+                        LogLevel::Info => T2,
+                    };
+                    ui.label(small(format!("{}  {}", e.time, e.message), col));
                 }
-
-                ui.add_space(2.0);
-
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        if clients.is_empty() {
-                            ui.horizontal(|ui| {
-                                tree_indent(ui);
-                                ui.label(
-                                    egui::RichText::new("no paired clients")
-                                        .color(T3)
-                                        .monospace()
-                                        .size(11.0),
-                                );
-                            });
-                        }
-                        for c in &clients {
-                            ui.horizontal(|ui| {
-                                tree_indent(ui);
-                                ui.label(
-                                    egui::RichText::new(&c.name)
-                                        .color(T1)
-                                        .monospace()
-                                        .size(11.0),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if custom_icon_button(ui, "×", RED)
-                                            .on_hover_text("unpair")
-                                            .clicked()
-                                        {
-                                            unpair = Some((c.unique_id.clone(), c.name.clone()));
-                                        }
-                                    },
-                                );
-                            });
-                        }
-                    });
             });
         });
 
-        if let Some((id, name)) = unpair {
-            self.do_unpair(&id, &name);
+        if let Some(f) = action {
+            f(self);
         }
     }
+}
 
-    /// Modal PIN prompt. Replaces Sunshine's web UI PIN page: Moonlight shows
-    /// a 4-digit PIN, the user types it here.
-    fn render_pairing_dialog(&mut self, ctx: &egui::Context) {
-        let Some((client_name, _id)) = self.host.pending_pairing() else {
-            if !self.pin_input.is_empty() {
-                self.pin_input.clear();
-            }
-            return;
-        };
+fn small(text: impl Into<String>, color: egui::Color32) -> egui::RichText {
+    egui::RichText::new(text).color(color).monospace().size(11.0)
+}
 
-        ctx.request_repaint_after(Duration::from_millis(100));
+/// Frameless text field with a thin underline, like the identifier field.
+fn underlined(
+    ui: &mut egui::Ui,
+    text: &mut String,
+    hint: &str,
+    width: f32,
+    password: bool,
+    limit: usize,
+) -> egui::Response {
+    let response = ui.add(
+        egui::TextEdit::singleline(text)
+            .desired_width(width)
+            .frame(false)
+            .password(password)
+            .char_limit(limit)
+            .font(egui::FontId::monospace(11.0))
+            .text_color(T1)
+            .hint_text(small(hint, T3)),
+    );
+    let y = response.rect.bottom();
+    let col = if response.has_focus() { ACC } else { BRD_H };
+    ui.painter().line_segment(
+        [egui::pos2(response.rect.min.x, y), egui::pos2(response.rect.max.x, y)],
+        egui::Stroke::new(0.5_f32, col),
+    );
+    response
+}
 
-        egui::Window::new("pairing")
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .frame(
-                panel_frame()
-                    .fill(BG2)
-                    .stroke(egui::Stroke::new(1.0_f32, ACC)),
-            )
-            .show(ctx, |ui| {
-                ui.set_width(240.0);
-                ui.vertical(|ui| {
-                    section_header(ui, "pairing request");
-
-                    ui.label(
-                        egui::RichText::new(&client_name)
-                            .color(T0)
-                            .monospace()
-                            .size(12.0),
-                    );
-                    ui.add_space(2.0);
-                    config_label(ui, "enter the PIN shown in moonlight");
-                    ui.add_space(6.0);
-
-                    let mut enter_pressed = false;
-                    ui.horizontal(|ui| {
-                        tree_indent(ui);
-                        let response = ui.add(
-                            egui::TextEdit::singleline(&mut self.pin_input)
-                                .desired_width(70.0)
-                                .char_limit(4)
-                                .frame(false)
-                                .font(egui::FontId::monospace(16.0))
-                                .text_color(ACC)
-                                .hint_text(
-                                    egui::RichText::new("0000").color(T3).monospace().size(16.0),
-                                ),
-                        );
-                        let line_y = response.rect.bottom();
-                        ui.painter().line_segment(
-                            [
-                                egui::pos2(response.rect.min.x, line_y),
-                                egui::pos2(response.rect.max.x, line_y),
-                            ],
-                            egui::Stroke::new(1.0_f32, ACC),
-                        );
-                        if self.pin_input.is_empty() {
-                            response.request_focus();
-                        }
-                        enter_pressed =
-                            response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    });
-                    self.pin_input.retain(|c| c.is_ascii_digit());
-
-                    ui.add_space(8.0);
-
-                    let valid = self.pin_input.len() == 4;
-                    let btn_width = (232.0 - 4.0) / 2.0;
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        if custom_button(ui, "accept", valid, GRN, btn_width).clicked()
-                            || (enter_pressed && valid)
-                        {
-                            self.do_submit_pin();
-                        }
-                        if custom_button(ui, "reject", true, RED, btn_width).clicked() {
-                            self.do_reject_pairing();
-                        }
-                    });
-                });
-            });
-    }
+/// Inline text button, same height as a text row.
+fn small_button(ui: &mut egui::Ui, text: &str, enabled: bool, color: egui::Color32) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::monospace(11.0), color);
+    let size = egui::vec2(galley.size().x + 16.0, 18.0);
+    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    let (bg, border, fg) = if !enabled {
+        (BG1, BRD, T3)
+    } else if response.hovered() {
+        (darken(color, 0.15), color, T0)
+    } else {
+        (BG2, BRD, color)
+    };
+    ui.painter().rect_filled(rect, 0.0, bg);
+    ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(0.5_f32, border));
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::monospace(11.0), fg);
+    response
 }
 
 fn section_header(ui: &mut egui::Ui, title: &str) {
