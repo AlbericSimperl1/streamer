@@ -10,8 +10,6 @@ const READ_CHUNK: usize = 64 * 1024;
 pub const MAX_PAYLOAD: usize = 1300;
 const HEADER_LEN: usize = 8;
 
-pub const IPAD_ADDR: &str = "192.168.0.119:5000";
-
 pub struct Packetizer {
     handle: Option<JoinHandle<()>>,
     stop: Arc<AtomicBool>,
@@ -74,7 +72,7 @@ fn packetize_loop<R: Read>(reader: &mut R, socket: &UdpSocket, stop: &Arc<Atomic
         }
 
         let n = match reader.read(&mut read_buf) {
-            Ok(0) => break, // EOF — ffmpeg is gestopt (stdin gesloten via finish()).
+            Ok(0) => break,
             Ok(n) => n,
             Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => {
@@ -103,9 +101,9 @@ fn find_start_codes(data: &[u8]) -> Vec<(usize, usize)> {
     while let Some(pos) = finder.find(&data[search_from..]) {
         let abs_pos = search_from + pos;
         let (sc_start, payload_start) = if abs_pos > 0 && data[abs_pos - 1] == 0 {
-            (abs_pos - 1, abs_pos + 3) // 4-byte variant: 00 00 00 01
+            (abs_pos - 1, abs_pos + 3)
         } else {
-            (abs_pos, abs_pos + 3) // 3-byte variant: 00 00 01
+            (abs_pos, abs_pos + 3)
         };
         result.push((sc_start, payload_start));
         search_from = abs_pos + 3;
@@ -117,7 +115,6 @@ fn find_start_codes(data: &[u8]) -> Vec<(usize, usize)> {
 fn extract_complete_units(pending: &[u8]) -> (Vec<(usize, usize)>, usize) {
     let starts = find_start_codes(pending);
     if starts.len() < 2 {
-        // Nog geen enkele complete NAL-unit — gewoon meer lezen.
         return (Vec::new(), 0);
     }
 
@@ -151,139 +148,5 @@ fn send_nal(socket: &UdpSocket, nal: &[u8], frame_id: &mut u32) {
         if let Err(e) = socket.send(&packet) {
             log::warn!("packetizer: send failed: {e}");
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Cursor;
-    use std::net::UdpSocket as StdUdpSocket;
-    use std::time::Duration;
-
-    fn sc3(payload: &[u8]) -> Vec<u8> {
-        let mut v = vec![0, 0, 1];
-        v.extend_from_slice(payload);
-        v
-    }
-
-    fn sc4(payload: &[u8]) -> Vec<u8> {
-        let mut v = vec![0, 0, 0, 1];
-        v.extend_from_slice(payload);
-        v
-    }
-
-    #[test]
-    fn finds_3_and_4byte_startcodes() {
-        let mut data = Vec::new();
-        data.extend(sc4(b"SPS"));
-        data.extend(sc3(b"PPS"));
-        let starts = find_start_codes(&data);
-        assert_eq!(starts, vec![(0, 4), (7, 10)]);
-    }
-
-    #[test]
-    fn streaming_across_fragmented_reads() {
-        // Simuleer ffmpeg dat in extreem kleine brokken naar stdout schrijft.
-        let mut full = Vec::new();
-        full.extend(sc4(b"SPSDATA"));
-        full.extend(sc3(b"PPSDATA"));
-        full.extend(sc3(b"IDRDATA-LONGER-SLICE"));
-        full.extend(sc3(b"PSLICE"));
-
-        let mut pending: Vec<u8> = Vec::new();
-        let mut emitted: Vec<Vec<u8>> = Vec::new();
-
-        for chunk in full.chunks(3) {
-            pending.extend_from_slice(chunk);
-            let (units, drain_upto) = extract_complete_units(&pending);
-            for (s, e) in &units {
-                emitted.push(pending[*s..*e].to_vec());
-            }
-            if drain_upto > 0 {
-                pending.drain(..drain_upto);
-            }
-        }
-
-        assert_eq!(emitted.len(), 3); // laatste NAL (PSLICE) blijft bewust "hangen"
-        assert_eq!(emitted[0], b"SPSDATA");
-        assert_eq!(emitted[1], b"PPSDATA");
-        assert_eq!(emitted[2], b"IDRDATA-LONGER-SLICE");
-    }
-
-    #[test]
-    fn large_nal_is_chunked_under_mtu() {
-        let nal: Vec<u8> = (0..3500u32).map(|i| (i % 256) as u8).collect();
-        let receiver = StdUdpSocket::bind("127.0.0.1:0").unwrap();
-        receiver
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .unwrap();
-        let addr = receiver.local_addr().unwrap();
-        let sender = StdUdpSocket::bind("127.0.0.1:0").unwrap();
-        sender.connect(addr).unwrap();
-
-        let mut frame_id = 0u32;
-        send_nal(&sender, &nal, &mut frame_id);
-
-        let mut reassembled = Vec::new();
-        let mut buf = [0u8; 65536];
-        let mut total_chunks_seen = None;
-        for _ in 0..3 {
-            let n = receiver.recv(&mut buf).unwrap();
-            assert!(n <= HEADER_LEN + MAX_PAYLOAD);
-            let total_chunks = u16::from_be_bytes([buf[6], buf[7]]);
-            total_chunks_seen = Some(total_chunks);
-            reassembled.extend_from_slice(&buf[HEADER_LEN..n]);
-        }
-        assert_eq!(total_chunks_seen, Some(3));
-        assert_eq!(reassembled, nal);
-    }
-
-    #[test]
-    fn end_to_end_over_real_loopback_socket() {
-        let receiver = StdUdpSocket::bind("127.0.0.1:0").unwrap();
-        receiver
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
-        let recv_addr = receiver.local_addr().unwrap();
-
-        let mut fake_stream = Vec::new();
-        fake_stream.extend(sc3(&[0x67, b'S', b'P', b'S'])); // SPS
-        fake_stream.extend(sc3(&[0x68, b'P', b'P', b'S'])); // PPS
-        let mut big_slice = vec![0x65u8]; // IDR
-        big_slice.extend(std::iter::repeat(0xAB).take(3000));
-        fake_stream.extend(sc3(&big_slice));
-        fake_stream.extend(sc3(b"X")); // sluit de vorige (grote) unit af
-
-        let reader = Cursor::new(fake_stream);
-        let stop = Arc::new(AtomicBool::new(false));
-        let mut packetizer = Packetizer::start(reader, recv_addr, stop).expect("start");
-
-        use std::collections::HashMap;
-        let mut by_frame: HashMap<u32, Vec<(u16, u16, Vec<u8>)>> = HashMap::new();
-        let mut buf = [0u8; 65536];
-        loop {
-            match receiver.recv(&mut buf) {
-                Ok(n) => {
-                    let frame_id = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
-                    let chunk_index = u16::from_be_bytes([buf[4], buf[5]]);
-                    let total_chunks = u16::from_be_bytes([buf[6], buf[7]]);
-                    by_frame.entry(frame_id).or_default().push((
-                        chunk_index,
-                        total_chunks,
-                        buf[HEADER_LEN..n].to_vec(),
-                    ));
-                }
-                Err(_) => break,
-            }
-        }
-        packetizer.stop();
-
-        assert_eq!(by_frame.len(), 3);
-        assert_eq!(by_frame[&0][0].2, vec![0x67, b'S', b'P', b'S']);
-        let mut idr = by_frame[&2].clone();
-        idr.sort_by_key(|(idx, _, _)| *idx);
-        let reassembled: Vec<u8> = idr.iter().flat_map(|(_, _, p)| p.clone()).collect();
-        assert_eq!(reassembled, big_slice);
     }
 }

@@ -6,7 +6,7 @@
 //!
 //! Pairing flow (this is what replaces Sunshine's web UI):
 //!   1. Moonlight starts pairing and shows a 4-digit PIN to the user.
-//!   2. The HTTP handler for `/pair?phrase=getservercert` calls
+//!   2. The HTTPS handler for `/pair?phrase=getservercert` calls
 //!      `HostShared::request_pairing(name, unique_id)` and blocks on the
 //!      returned receiver.
 //!   3. The GUI shows a dialog, the user types the PIN shown in Moonlight.
@@ -17,6 +17,7 @@
 pub mod http;
 pub mod identity;
 pub mod mdns;
+pub mod pairing;
 pub mod server;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,8 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_HTTP_PORT: u16 = 47989;
+pub const DEFAULT_HTTPS_PORT: u16 = 47984;
+pub const DEFAULT_RTSP_PORT: u16 = 48010;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PairedClient {
@@ -53,6 +56,7 @@ pub struct SessionInfo {
     pub fps: u32,
     pub bitrate_kbps: u32,
     pub started: SystemTime,
+    pub rtsp_url: String, // NIEUW: voor /launch response
 }
 
 #[derive(Debug, PartialEq)]
@@ -155,6 +159,15 @@ impl HostShared {
 
     pub fn is_paired(&self, unique_id: &str) -> bool {
         self.lock().paired.iter().any(|c| c.unique_id == unique_id)
+    }
+
+    /// Zoekt een paired client op basis van het certificaat (voor mTLS).
+    pub fn get_paired_by_cert(&self, cert_pem: &str) -> Option<PairedClient> {
+        self.lock()
+            .paired
+            .iter()
+            .find(|c| c.cert_pem == cert_pem)
+            .cloned()
     }
 
     // pairing: GUI side

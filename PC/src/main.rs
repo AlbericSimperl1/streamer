@@ -9,6 +9,7 @@ mod capture;
 mod gui;
 mod hypr;
 mod moonlight;
+mod rtsp; // NIEUW
 mod types;
 
 fn main() -> Result<(), eframe::Error> {
@@ -20,9 +21,6 @@ fn main() -> Result<(), eframe::Error> {
             .with_app_id("hyprland-display-streamer")
             .with_inner_size([scale * w, scale * h])
             .with_min_inner_size([w / scale, h / scale]),
-        // Vsync blocks eglSwapBuffers on hidden Wayland surfaces (no frame
-        // callbacks), which freezes the event loop and triggers Hyprland's
-        // "Application Not Responding" dialog.
         vsync: false,
         ..Default::default()
     };
@@ -30,6 +28,9 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Hyprland Virtual Display",
         options,
-        Box::new(|_cc| Ok(Box::new(app::App::new_scaled(_cc, scale)))),
+        Box::new(move |_cc| {
+            let app: Box<dyn eframe::App> = Box::new(app::App::new_scaled(_cc, scale));
+            app
+        }),
     )
 }

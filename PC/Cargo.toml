@@ -1,28 +1,44 @@
 [package]
-name = "hyprStream"
+name = "streamer"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = "0.29"
-egui = "0.29"
+# GUI
+eframe = "0.27"
+egui = "0.27"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Capture & encoding
+pipewire = "0.9"
+ashpd = { version = "0.10", features = ["tokio"] }
+
+# TLS
+rustls = "0.23"
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
+
+# Cryptography
+openssl = "0.10"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+sha2 = "0.10"
+pbkdf2 = "0.12"
+hex = "0.4"
+rand = "0.8"
+base64 = "0.22"
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-chrono = "0.4"
-image = { version = "0.25", default-features = false, features = ["png"] }
 
-# capturing
-ashpd = { version = "0.13", default-features = false, features = ["tokio", "screencast"] }
-pipewire = "0.10"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "fs"] }
+# mDNS
+mdns-sd = "0.11"
+
+# Utils
 log = "0.4"
-ctrlc = "3"
+chrono = "0.4"
+dirs = "5"
 memchr = "2"
-
-# moonlight host
-openssl = "0.10"
-mdns-sd = "0.13"
-
-[profile.release]
-opt-level = 3
-lto = true

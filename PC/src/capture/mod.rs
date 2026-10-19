@@ -55,13 +55,11 @@ pub struct CaptureSession {
 }
 
 impl CaptureSession {
-    // 1. target_addr toegevoegd aan parameters
     pub fn start(output_path: String, target_addr: String) -> Result<Self, String> {
         if output_path.trim().is_empty() {
             return Err("Output path is empty.".into());
         }
 
-        // Voeg automatisch poort 5000 toe als enkel een IP is ingevoerd
         let full_target_addr = if target_addr.contains(':') {
             target_addr
         } else {
@@ -125,7 +123,6 @@ fn set_status(status: &Arc<Mutex<CaptureStatus>>, s: CaptureStatus) {
     }
 }
 
-// 2. target_addr doorgegeven in de capture loop
 fn run_capture_loop(
     stop_flag: Arc<AtomicBool>,
     status: Arc<Mutex<CaptureStatus>>,
@@ -191,7 +188,6 @@ fn run_capture_loop(
     set_status(&status, CaptureStatus::Idle);
 }
 
-// 3. target_addr ontvangen in run_encoder
 fn run_encoder(
     rx: std::sync::mpsc::Receiver<Frame>,
     stop_flag: Arc<AtomicBool>,
@@ -244,20 +240,17 @@ fn run_encoder(
     };
 
     let packetizer_stop = Arc::new(AtomicBool::new(false));
-    let mut packetizer = match packetizer::Packetizer::start(
-        stdout,
-        &target_addr, // <-- Bestaat nu als string parameter
-        Arc::clone(&packetizer_stop),
-    ) {
-        Ok(p) => p,
-        Err(e) => {
-            set_status(
-                &status,
-                CaptureStatus::Error(format!("Packetizer start failed: {e}")),
-            );
-            return;
-        }
-    };
+    let mut packetizer =
+        match packetizer::Packetizer::start(stdout, &target_addr, Arc::clone(&packetizer_stop)) {
+            Ok(p) => p,
+            Err(e) => {
+                set_status(
+                    &status,
+                    CaptureStatus::Error(format!("Packetizer start failed: {e}")),
+                );
+                return;
+            }
+        };
 
     set_status(
         &status,
