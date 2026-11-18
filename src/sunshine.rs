@@ -103,7 +103,10 @@ pub fn state() -> ServiceState {
     }
 }
 
+// A manual start must work even after systemd's start-limit tripped
+// ("Start request repeated too quickly"), which otherwise blocks it.
 pub fn start() -> Result<(), String> {
+    let _ = systemctl(&["reset-failed", UNIT]);
     systemctl(&["start", "--no-block", UNIT]).map(|_| ())
 }
 
@@ -112,6 +115,7 @@ pub fn stop() -> Result<(), String> {
 }
 
 pub fn restart() -> Result<(), String> {
+    let _ = systemctl(&["reset-failed", UNIT]);
     systemctl(&["restart", "--no-block", UNIT]).map(|_| ())
 }
 

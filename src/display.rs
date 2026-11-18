@@ -149,7 +149,9 @@ impl Display {
     /// Sets the monitor up for a Moonlight session asking for `w×h@fps`
     /// (called from Sunshine's prep-cmd before capture starts).
     /// With `follow_client` the mode becomes the client's resolution in the
-    /// monitor's current orientation; otherwise the configured mode is kept.
+    /// monitor's current orientation; otherwise the configured size is kept.
+    /// The refresh rate always follows the stream: a monitor at e.g. 73 Hz
+    /// streamed at 60 fps makes Sunshine drop frames unevenly (judder).
     pub fn prepare_session(&self, w: u32, h: u32, fps: u32) -> Result<MonitorConfig, String> {
         let mut g = self.lock();
         if g.follow_client && w > 0 && h > 0 {
@@ -157,9 +159,9 @@ impl Display {
             let (nw, nh) = orientation.apply(w, h);
             let main = g.main.clone();
             g.config.resize_keeping_edge(nw, nh, main.as_ref());
-            if fps > 0 {
-                g.config.fps = fps;
-            }
+        }
+        if fps > 0 {
+            g.config.fps = fps;
         }
         apply_locked(&mut g)?;
         Ok(g.config.clone())
